@@ -1,0 +1,31 @@
+diff --git a/src/civetweb.c b/src/civetweb.c
+--- a/src/civetweb.c
++++ b/src/civetweb.c
+@@ -17911,9 +17911,24 @@ close_connection(struct mg_connection *conn)
+ 	}
+ #elif !defined(NO_SSL)
+ 	if (conn->ssl != NULL) {
+-		/* Run SSL_shutdown twice to ensure completely close SSL connection
+-		 */
+-		SSL_shutdown(conn->ssl);
++#if defined(_WIN32)
++		/* Drain TLS before TCP shutdown. A single nonblocking SSL_shutdown
++		 * can lose the last response on Windows. Bound peer waiting to 1s. */
++		DWORD timeout_ms = 1000;
++		int shutdown_result;
++		set_blocking_mode(conn->client.sock);
++		setsockopt(conn->client.sock, SOL_SOCKET, SO_RCVTIMEO,
++		           (const char *)&timeout_ms, sizeof(timeout_ms));
++		setsockopt(conn->client.sock, SOL_SOCKET, SO_SNDTIMEO,
++		           (const char *)&timeout_ms, sizeof(timeout_ms));
++		ERR_clear_error();
++		shutdown_result = SSL_shutdown(conn->ssl);
++		if (shutdown_result == 0) {
++			SSL_shutdown(conn->ssl);
++		}
++#else
++		SSL_shutdown(conn->ssl);
++#endif
+ 		SSL_free(conn->ssl);
+ 		OPENSSL_REMOVE_THREAD_STATE();
+ 		conn->ssl = NULL;

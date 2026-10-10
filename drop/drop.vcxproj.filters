@@ -14,4 +14,23 @@
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="network.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="network_ws.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="receipts.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="client.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="trust.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="transfers.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ui.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ui_data.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ui_worker.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ui_settings.c"><Filter>源文件</Filter></ClCompile>
+    <ClInclude Include="network.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="client.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="trust.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="ui_data.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="ui_internal.h"><Filter>头文件</Filter></ClInclude>
+    <Manifest Include="drop.manifest"><Filter>资源文件</Filter></Manifest>
+  </ItemGroup>
 </Project>

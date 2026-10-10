@@ -4,12 +4,16 @@
     <DropRoot>$(MSBuildThisFileDirectory)</DropRoot>
     <DropTriplet Condition="'$(Platform)'=='x64'">x64-windows</DropTriplet>
     <DropTriplet Condition="'$(Platform)'=='Win32'">x86-windows</DropTriplet>
-    <DropDependencies>$(DropRoot)third_party\installed\$(DropTriplet)\</DropDependencies>
+    <DropDependencies>$(DropRoot)third_party\installed-$(Platform)\$(DropTriplet)\</DropDependencies>
     <DropDependencyConfig Condition="'$(Configuration)'=='Debug'">debug\</DropDependencyConfig>
     <OutDir>$(DropRoot)build\bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(DropRoot)build\obj\$(Platform)\$(Configuration)\$(MSBuildProjectName)\</IntDir>
     <VcpkgEnabled>false</VcpkgEnabled>
     <VcpkgEnableManifest>false</VcpkgEnableManifest>
+    <DropDiagnostics Condition="'$(DropProduction)'!='true'">1</DropDiagnostics>
+    <DropDiagnostics Condition="'$(DropProduction)'=='true'">0</DropDiagnostics>
+    <OutDir Condition="'$(DropProduction)'=='true'">$(DropRoot)build\production\$(Platform)\</OutDir>
+    <IntDir Condition="'$(DropProduction)'=='true'">$(DropRoot)build\obj\production\$(Platform)\$(MSBuildProjectName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
@@ -18,7 +22,7 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;_WIN32_WINNT=0x0A00;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>DROP_DIAGNOSTICS=$(DropDiagnostics);WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;_WIN32_WINNT=0x0A00;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(DropRoot)dropcommon;$(DropDependencies)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>

@@ -75,7 +75,6 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -92,7 +91,6 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -107,7 +105,6 @@
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -124,7 +121,6 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -137,12 +133,27 @@
   <Import Project="..\Drop.Build.props" />
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalDependencies>sqlite3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>sqlite3.lib;comctl32.lib;comdlg32.lib;shell32.lib;user32.lib;gdi32.lib;ole32.lib;iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SubSystem>Windows</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.c" />
     <ClCompile Include="network.c" />
+    <ClCompile Include="network_ws.c" />
+    <ClCompile Include="client.c" />
+    <ClCompile Include="receipts.c" />
+    <ClCompile Include="trust.c" />
+    <ClCompile Include="transfers.c" />
+    <ClCompile Include="ui.c" />
+    <ClCompile Include="ui_data.c" />
+    <ClCompile Include="ui_worker.c" />
+    <ClCompile Include="ui_settings.c" />
+    <ClInclude Include="ui_data.h" />
+    <ClInclude Include="ui_internal.h" />
+    <Manifest Include="drop.manifest" />
+    <ClInclude Include="trust.h" />
+    <ClInclude Include="client.h" />
     <ClInclude Include="network.h" />
     <ProjectReference Include="..\dropcommon\dropcommon.vcxproj">
       <Project>{0A0B0C01-7766-4400-8888-010101010101}</Project>

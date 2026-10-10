@@ -28,12 +28,27 @@
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>sqlcipher.lib;civetweb.lib;libcrypto.lib;libssl.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>sqlcipher.lib;civetweb.lib;libcrypto.lib;libssl.lib;shell32.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Manifest><AdditionalManifestFiles>$(ProjectDir)dropserver.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles></Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.c" />
     <ClCompile Include="database.c" />
     <ClCompile Include="server.c" />
+    <ClCompile Include="messages.c" />
+    <ClCompile Include="objects.c" />
+    <ClCompile Include="receipts.c" />
+    <ClCompile Include="maintenance.c" />
+    <ClCompile Include="admin.c" />
+    <ClCompile Include="service.c" />
+    <ClCompile Include="backup.c" />
+    <ClCompile Include="backup_worker.c" />
+    <ClCompile Include="finalize.c" />
+    <ClCompile Include="cloud_http.c" />
+    <ClCompile Include="cloud_oauth.c" />
+    <ClCompile Include="cloud_drive.c" />
+    <ClCompile Include="cloud_commands.c" />
+    <ClCompile Include="..\drop\trust.c" />
     <ClInclude Include="server.h" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="..\dropcommon\dropcommon.vcxproj"><Project>{0A0B0C01-7766-4400-8888-010101010101}</Project></ProjectReference></ItemGroup>

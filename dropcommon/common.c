@@ -10,8 +10,12 @@
 const char *drop_error_name(drop_error error) {
     static const char *names[] = {"ok", "invalid_argument", "limit_exceeded", "io_error",
         "crypto_error", "database_error", "unauthorized", "conflict", "protocol_error",
-        "network_error", "certificate_error", "unsupported"};
+        "network_error", "certificate_error", "unsupported", "space_unavailable", "in_progress"};
     return (unsigned)error < sizeof(names)/sizeof(names[0]) ? names[error] : "unknown_error";
+}
+drop_error drop_io_error(void) {
+    DWORD error=GetLastError();
+    return error==ERROR_DISK_FULL || error==ERROR_HANDLE_DISK_FULL || error==ERROR_DISK_QUOTA_EXCEEDED?DROP_E_SPACE:DROP_E_IO;
 }
 int drop_init(void) { return sodium_init() >= 0; }
 int drop_u64_parse(const char *text, uint64_t *value) {
@@ -70,9 +74,11 @@ int drop_url_parse(const WCHAR *text, drop_url *url) {
 }
 static int json_valid(const cJSON *node, unsigned depth) {
     const cJSON *child, *other;
+    unsigned count = 0;
     if (depth > 16) return 0;
     if (cJSON_IsString(node) && !drop_utf8_valid(node->valuestring, strlen(node->valuestring))) return 0;
     for (child = node->child; child; child = child->next) {
+        if (++count > 256) return 0;
         if (child->string) {
             if (!drop_utf8_valid(child->string, strlen(child->string))) return 0;
             for (other = child->next; other; other = other->next)
@@ -84,12 +90,18 @@ static int json_valid(const cJSON *node, unsigned depth) {
 }
 cJSON *drop_json_parse(const char *data, size_t size) {
     cJSON *result; const char *end; size_t i;
+    unsigned nesting = 0, commas = 0; int quoted = 0;
     if (!size || size > DROP_MAX_JSON || !drop_utf8_valid(data, size)) return NULL;
     /* cJSON uses zero-terminated strings. Refuse escaped NUL before parsing. */
     for (i = 0; i < size; ++i) {
-        if (data[i] == '\\' && i + 1 < size) {
+        if (data[i] == '"') { quoted = !quoted; continue; }
+        if (quoted && data[i] == '\\' && i + 1 < size) {
             if (i + 5 < size && !memcmp(data + i + 1, "u0000", 5)) return NULL;
             ++i;
+        } else if (!quoted) {
+            if ((data[i] == '{' || data[i] == '[') && ++nesting > 16) return NULL;
+            if (data[i] == '}' || data[i] == ']') { if (!nesting) return NULL; --nesting; }
+            if (data[i] == ',' && ++commas > 4096) return NULL;
         }
     }
     result = cJSON_ParseWithLengthOpts(data, size, &end, 0);
@@ -130,7 +142,7 @@ int drop_text_unpack(const drop_text *input, char **output) {
         if (ZSTD_isError(size) || size != input->original_size) { free(text); return 0; }
     } else {
         if (input->size != input->original_size) { free(text); return 0; }
-        memcpy(text, input->data, input->size); size = input->size;
+        if(input->size) memcpy(text, input->data, input->size); size = input->size;
     }
     if (!drop_utf8_valid(text, size)) { free(text); return 0; }
     text[size] = 0; *output = text; return 1;

@@ -3,7 +3,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content (Join-Path $root 'vcpkg.json') -Raw | ConvertFrom-Json
 $checkout = Join-Path $root 'third_party\vcpkg'
 if (!(Test-Path (Join-Path $checkout '.git'))) {
-    & git clone --no-checkout https://github.com/microsoft/vcpkg.git $checkout
+    & git clone --no-checkout --depth=1 https://github.com/microsoft/vcpkg.git $checkout
     if ($LASTEXITCODE -ne 0) { throw 'Cannot download vcpkg.' }
 }
 & git -C $checkout fetch origin $manifest.'builtin-baseline' --depth=1

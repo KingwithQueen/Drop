@@ -32,8 +32,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="common.c" />
+    <ClCompile Include="config.c" />
     <ClCompile Include="platform.c" />
     <ClCompile Include="self_test.c" />
+    <ClCompile Include="object.c" />
+    <ClInclude Include="object.h" />
     <ClInclude Include="drop_common.h" />
   </ItemGroup>
 
