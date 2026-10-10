@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <DropRoot>$(MSBuildThisFileDirectory)</DropRoot>
+    <DropTriplet Condition="'$(Platform)'=='x64'">x64-windows</DropTriplet>
+    <DropTriplet Condition="'$(Platform)'=='Win32'">x86-windows</DropTriplet>
+    <DropDependencies>$(DropRoot)third_party\installed\$(DropTriplet)\</DropDependencies>
+    <DropDependencyConfig Condition="'$(Configuration)'=='Debug'">debug\</DropDependencyConfig>
+    <OutDir>$(DropRoot)build\bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(DropRoot)build\obj\$(Platform)\$(Configuration)\$(MSBuildProjectName)\</IntDir>
+    <VcpkgEnabled>false</VcpkgEnabled>
+    <VcpkgEnableManifest>false</VcpkgEnableManifest>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>true</TreatWarningAsError>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;UNICODE;_UNICODE;_WIN32_WINNT=0x0A00;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(DropRoot)dropcommon;$(DropDependencies)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(DropDependencies)$(DropDependencyConfig)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>cjson.lib;libsodium.lib;zstd.lib;crypt32.lib;advapi32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

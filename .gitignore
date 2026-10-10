@@ -1,0 +1,10 @@
+.vs/
+build/
+third_party/vcpkg/
+third_party/installed/
+third_party/downloads/
+*.vcxproj.user
+*.pdb
+*.obj
+*.log
+*.user

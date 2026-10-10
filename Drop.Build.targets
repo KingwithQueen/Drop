@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="CheckDropDependencies" BeforeTargets="ClCompile">
+    <Error Condition="!Exists('$(DropDependencies)include\sodium.h')" Text="Missing pinned dependencies. Run scripts/Build.ps1 -Dependencies for this platform." />
+  </Target>
+  <Target Name="CopyDropRuntime" AfterTargets="Build" Condition="'$(ConfigurationType)'=='Application'">
+    <ItemGroup>
+      <DropRuntime Include="$(DropDependencies)$(DropDependencyConfig)bin\*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DropRuntime)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -1,0 +1,9 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="drop/drop.vcxproj" Id="47adbc89-fb3f-4d62-a5bb-e98a9ba1ef20" />
+  <Project Path="dropcommon/dropcommon.vcxproj" Id="0a0b0c01-7766-4400-8888-010101010101" />
+  <Project Path="dropserver/dropserver.vcxproj" Id="0a0b0c02-7766-4400-8888-020202020202" />
+</Solution>
