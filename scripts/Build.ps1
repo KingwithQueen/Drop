@@ -8,6 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 if($Production -and ($Configuration -ne 'Release' -or $Test)) { throw 'Production requires Release and uses production verification, without fixture self-tests.' }
+if($Test -and !(Test-Path -LiteralPath (Join-Path $root 'dropcommon\self_test.c'))) { throw 'Local verification sources are excluded from the source release. Build without -Test.' }
 $triplet = if ($Platform -eq 'x64') { 'x64-windows' } else { 'x86-windows' }
 $solutionPlatform = if ($Platform -eq 'Win32') { 'x86' } else { 'x64' }
 $vcpkg = Join-Path $root 'third_party\vcpkg\vcpkg.exe'

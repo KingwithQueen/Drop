@@ -1,3 +1,4 @@
+/* Windows 文件、目录权限、DPAPI 和控制台密码输入边界，内部业务字符串仍使用 UTF-8。 */
 #include "drop_common.h"
 #include <wincrypt.h>
 #include <dpapi.h>
@@ -8,141 +9,272 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 在给定容量内连接 Windows 目录和文件名；检查长度并保留绝对目录的既有含义。 */
 int drop_path_join(const WCHAR *root, const WCHAR *name, WCHAR *path, size_t capacity) {
     size_t length;
     if (!root || !name || !path || !capacity || wcspbrk(name, L"/\\:")) return 0;
     length = wcslen(root);
-    return swprintf_s(path, capacity, L"%s%s%s", root,
-        length && root[length-1] == L'\\' ? L"" : L"\\", name) >= 0;
+    return swprintf_s(path, capacity, L"%s%s%s", root, length && root[length - 1] == L'\\' ? L"" : L"\\", name) >= 0;
 }
+/* 基于当前 EXE 确定 Data 下的应用目录，可按需创建父目录；不向 AppData 或系统盘回退。 */
+int drop_program_data_directory(const WCHAR *application, WCHAR *path, size_t capacity, int create_parent) {
+    WCHAR executable[32768], data[32768], *separator;
+    DWORD length;
+    if (!application || !path || !capacity || capacity > 32768) return 0;
+    length = GetModuleFileNameW(NULL, executable, 32768);
+    if (!length || length >= 32768 || !(separator = wcsrchr(executable, L'\\'))) return 0;
+    *separator = 0;
+    if (!drop_path_join(executable, L"Data", data, 32768)) return 0;
+    if (create_parent) {
+        DWORD attributes = GetFileAttributesW(data);
+        if (attributes == INVALID_FILE_ATTRIBUTES) {
+            if (!drop_private_directory(data)) return 0;
+        } else if (!(attributes & FILE_ATTRIBUTE_DIRECTORY) || (attributes & FILE_ATTRIBUTE_REPARSE_POINT))
+            return 0;
+    }
+    return drop_path_join(data, application, path, capacity);
+}
+/* 创建或收紧用户数据目录的受保护权限，只允许当前用户、管理员和 SYSTEM 访问。 */
 int drop_private_directory(const WCHAR *path) {
-    HANDLE token = NULL; DWORD required = 0; TOKEN_USER *user = NULL;
-    WCHAR *sid = NULL, descriptor[512]; PSECURITY_DESCRIPTOR security = NULL;
-    SECURITY_ATTRIBUTES attributes; int result = 0; DWORD error;
+    HANDLE token = NULL;
+    DWORD required = 0;
+    TOKEN_USER *user = NULL;
+    WCHAR *sid = NULL, descriptor[512];
+    PSECURITY_DESCRIPTOR security = NULL;
+    SECURITY_ATTRIBUTES attributes;
+    int result = 0;
+    DWORD error;
     if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) goto cleanup;
     GetTokenInformation(token, TokenUser, NULL, 0, &required);
-    user = malloc(required); if (!user) goto cleanup;
-    if (!GetTokenInformation(token, TokenUser, user, required, &required) ||
-        !ConvertSidToStringSidW(user->User.Sid, &sid)) goto cleanup;
-    /* Protected DACL: this user, administrators, and SYSTEM; inherited by children. */
+    user = malloc(required);
+    if (!user) goto cleanup;
+    if (!GetTokenInformation(token, TokenUser, user, required, &required) || !ConvertSidToStringSidW(user->User.Sid, &sid)) goto cleanup;
+    /* 使用受保护 DACL，仅允许当前用户、管理员和 SYSTEM；权限由子项继承。 */
     if (swprintf_s(descriptor, 512, L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;%s)", sid) < 0 ||
-        !ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL)) goto cleanup;
-    attributes.nLength = sizeof(attributes); attributes.lpSecurityDescriptor = security;
+        !ConvertStringSecurityDescriptorToSecurityDescriptorW(descriptor, SDDL_REVISION_1, &security, NULL))
+        goto cleanup;
+    attributes.nLength = sizeof(attributes);
+    attributes.lpSecurityDescriptor = security;
     attributes.bInheritHandle = FALSE;
     if (!CreateDirectoryW(path, &attributes)) {
         error = GetLastError();
-        if (error != ERROR_ALREADY_EXISTS || !(GetFileAttributesW(path) & FILE_ATTRIBUTE_DIRECTORY) ||
-            (GetFileAttributesW(path) & FILE_ATTRIBUTE_REPARSE_POINT)) goto cleanup;
+        if (error != ERROR_ALREADY_EXISTS || !(GetFileAttributesW(path) & FILE_ATTRIBUTE_DIRECTORY) || (GetFileAttributesW(path) & FILE_ATTRIBUTE_REPARSE_POINT)) goto cleanup;
         if (!SetFileSecurityW(path, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, security)) goto cleanup;
     }
     result = 1;
 cleanup:
     if (security) LocalFree(security);
     if (sid) LocalFree(sid);
-    free(user); if (token) CloseHandle(token); return result;
+    free(user);
+    if (token) CloseHandle(token);
+    return result;
 }
+/* 按是否允许替换创建文件，完整写入后刷新；失败返回 0，调用者决定是否保留或清理目标。 */
 int drop_file_write(const WCHAR *path, const void *data, DWORD size, int replace) {
-    WCHAR temporary[32768]; char id[DROP_ID_CAP]; WCHAR wideId[DROP_ID_CAP];
-    HANDLE file; DWORD written = 0,error=ERROR_SUCCESS; int success;
+    WCHAR temporary[32768];
+    char id[DROP_ID_CAP];
+    WCHAR wideId[DROP_ID_CAP];
+    HANDLE file;
+    DWORD written = 0, error = ERROR_SUCCESS;
+    int success;
     drop_id_new(id);
-    if (!drop_to_wide(id, wideId, DROP_ID_CAP) ||
-        swprintf_s(temporary, 32768, L"%s.%s.tmp", path, wideId) < 0) return 0;
+    if (!drop_to_wide(id, wideId, DROP_ID_CAP) || swprintf_s(temporary, 32768, L"%s.%s.tmp", path, wideId) < 0) return 0;
     file = CreateFileW(temporary, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) return 0;
     success = WriteFile(file, data, size, &written, NULL) && written == size && FlushFileBuffers(file);
-    if(!success) error=GetLastError();
+    if (!success) error = GetLastError();
     CloseHandle(file);
     if (success) success = MoveFileExW(temporary, path, MOVEFILE_WRITE_THROUGH | (replace ? MOVEFILE_REPLACE_EXISTING : 0)) != 0;
-    if (!success) { if(!error) error=GetLastError(); DeleteFileW(temporary); SetLastError(error); }
+    if (!success) {
+        if (!error) error = GetLastError();
+        DeleteFileW(temporary);
+        SetLastError(error);
+    }
     return success;
 }
+/* 在长度上限内完整读取文件并追加 NUL；成功缓冲由调用者 free，输出 size 不含终止符。 */
 int drop_file_read(const WCHAR *path, unsigned char **data, DWORD *size, DWORD limit) {
-    HANDLE file; LARGE_INTEGER length; unsigned char *buffer; DWORD read = 0; int success;
+    HANDLE file;
+    LARGE_INTEGER length;
+    unsigned char *buffer;
+    DWORD read = 0;
+    int success;
     if (!path || !data || !size) return 0;
-    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL);
     if (file == INVALID_HANDLE_VALUE) return 0;
-    if (!GetFileSizeEx(file, &length) || length.QuadPart < 0 || length.QuadPart > limit) { CloseHandle(file); return 0; }
-    buffer = malloc((size_t)length.QuadPart + 1); if (!buffer) { CloseHandle(file); return 0; }
-    success = ReadFile(file, buffer, (DWORD)length.QuadPart, &read, NULL) && read == (DWORD)length.QuadPart;
-    CloseHandle(file); if (!success) { free(buffer); return 0; }
-    buffer[read] = 0; *data = buffer; *size = read; return 1;
-}
-int drop_machine_directory(const WCHAR *path) {
-    PSECURITY_DESCRIPTOR security=NULL; SECURITY_ATTRIBUTES attributes; DWORD error; int ok=0;
-    SID_IDENTIFIER_AUTHORITY authority=SECURITY_NT_AUTHORITY; PSID administrators=NULL; BOOL member=FALSE;
-    if(!AllocateAndInitializeSid(&authority,2,SECURITY_BUILTIN_DOMAIN_RID,DOMAIN_ALIAS_RID_ADMINS,0,0,0,0,0,0,&administrators)) return 0;
-    CheckTokenMembership(NULL,administrators,&member); FreeSid(administrators);
-    if(!member) { SetLastError(ERROR_ACCESS_DENIED); return 0; }
-    if(!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",SDDL_REVISION_1,&security,NULL)) return 0;
-    attributes.nLength=sizeof(attributes); attributes.lpSecurityDescriptor=security; attributes.bInheritHandle=FALSE;
-    if(CreateDirectoryW(path,&attributes)) ok=1;
-    else {
-        error=GetLastError();
-        if(error==ERROR_ALREADY_EXISTS && (GetFileAttributesW(path)&FILE_ATTRIBUTE_DIRECTORY) && !(GetFileAttributesW(path)&FILE_ATTRIBUTE_REPARSE_POINT))
-            ok=SetFileSecurityW(path,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,security)!=0;
-    } LocalFree(security); return ok;
-}
-static int machine_children(const WCHAR *path,PSECURITY_DESCRIPTOR security,unsigned depth) {
-    WCHAR *search=malloc(32768*sizeof(WCHAR)),*child=malloc(32768*sizeof(WCHAR)); WIN32_FIND_DATAW item; HANDLE find=INVALID_HANDLE_VALUE; int ok=0;
-    PACL dacl=NULL; PSID owner=NULL; BOOL present,defaulted;
-    if(depth>16 || !search || !child || !GetSecurityDescriptorDacl(security,&present,&dacl,&defaulted) || !present || !GetSecurityDescriptorOwner(security,&owner,&defaulted) || !drop_path_join(path,L"*",search,32768)) goto done;
-    find=FindFirstFileW(search,&item); if(find==INVALID_HANDLE_VALUE) goto done;
-    do {
-        HANDLE file; BY_HANDLE_FILE_INFORMATION info;
-        if(!wcscmp(item.cFileName,L".") || !wcscmp(item.cFileName,L"..")) continue;
-        if((item.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT) || !drop_path_join(path,item.cFileName,child,32768)) goto done;
-        file=CreateFileW(child,READ_CONTROL|WRITE_DAC|WRITE_OWNER,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,NULL);
-        if(file==INVALID_HANDLE_VALUE) goto done;
-        if(!GetFileInformationByHandle(file,&info) || (info.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT) || SetSecurityInfo(file,SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,owner,NULL,dacl,NULL)!=ERROR_SUCCESS) { CloseHandle(file); goto done; }
+    if (!GetFileSizeEx(file, &length) || length.QuadPart < 0 || length.QuadPart > limit) {
         CloseHandle(file);
-        if((item.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) && !machine_children(child,security,depth+1)) goto done;
-    } while(FindNextFileW(find,&item)); ok=GetLastError()==ERROR_NO_MORE_FILES;
+        return 0;
+    }
+    buffer = malloc((size_t)length.QuadPart + 1);
+    if (!buffer) {
+        CloseHandle(file);
+        return 0;
+    }
+    success = ReadFile(file, buffer, (DWORD)length.QuadPart, &read, NULL) && read == (DWORD)length.QuadPart;
+    CloseHandle(file);
+    if (!success) {
+        free(buffer);
+        return 0;
+    }
+    buffer[read] = 0;
+    *data = buffer;
+    *size = read;
+    return 1;
+}
+/* 将服务目录设置为 SYSTEM 和管理员可访问并调整所有者；权限设置失败返回 0。 */
+int drop_machine_directory(const WCHAR *path) {
+    PSECURITY_DESCRIPTOR security = NULL;
+    SECURITY_ATTRIBUTES attributes;
+    DWORD error;
+    int ok = 0;
+    SID_IDENTIFIER_AUTHORITY authority = SECURITY_NT_AUTHORITY;
+    PSID administrators = NULL;
+    BOOL member = FALSE;
+    if (!AllocateAndInitializeSid(&authority, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &administrators)) return 0;
+    CheckTokenMembership(NULL, administrators, &member);
+    FreeSid(administrators);
+    if (!member) {
+        SetLastError(ERROR_ACCESS_DENIED);
+        return 0;
+    }
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", SDDL_REVISION_1, &security, NULL)) return 0;
+    attributes.nLength = sizeof(attributes);
+    attributes.lpSecurityDescriptor = security;
+    attributes.bInheritHandle = FALSE;
+    if (CreateDirectoryW(path, &attributes))
+        ok = 1;
+    else {
+        error = GetLastError();
+        if (error == ERROR_ALREADY_EXISTS && (GetFileAttributesW(path) & FILE_ATTRIBUTE_DIRECTORY) && !(GetFileAttributesW(path) & FILE_ATTRIBUTE_REPARSE_POINT))
+            ok = SetFileSecurityW(path, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, security) != 0;
+    }
+    LocalFree(security);
+    return ok;
+}
+/* 逐个检查服务目录子项并收紧权限，拒绝重解析点，避免沿链接修改其他目录。 */
+static int machine_children(const WCHAR *path, PSECURITY_DESCRIPTOR security, unsigned depth) {
+    WCHAR *search = malloc(32768 * sizeof(WCHAR)), *child = malloc(32768 * sizeof(WCHAR));
+    WIN32_FIND_DATAW item;
+    HANDLE find = INVALID_HANDLE_VALUE;
+    int ok = 0;
+    PACL dacl = NULL;
+    PSID owner = NULL;
+    BOOL present, defaulted;
+    if (depth > 16 || !search || !child || !GetSecurityDescriptorDacl(security, &present, &dacl, &defaulted) || !present ||
+        !GetSecurityDescriptorOwner(security, &owner, &defaulted) || !drop_path_join(path, L"*", search, 32768))
+        goto done;
+    find = FindFirstFileW(search, &item);
+    if (find == INVALID_HANDLE_VALUE) goto done;
+    do {
+        HANDLE file;
+        BY_HANDLE_FILE_INFORMATION info;
+        if (!wcscmp(item.cFileName, L".") || !wcscmp(item.cFileName, L"..")) continue;
+        if ((item.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) || !drop_path_join(path, item.cFileName, child, 32768)) goto done;
+        file = CreateFileW(child, READ_CONTROL | WRITE_DAC | WRITE_OWNER, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+        if (file == INVALID_HANDLE_VALUE) goto done;
+        if (!GetFileInformationByHandle(file, &info) || (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+            SetSecurityInfo(file, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, owner, NULL, dacl, NULL) !=
+                ERROR_SUCCESS) {
+            CloseHandle(file);
+            goto done;
+        }
+        CloseHandle(file);
+        if ((item.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && !machine_children(child, security, depth + 1)) goto done;
+    } while (FindNextFileW(find, &item));
+    ok = GetLastError() == ERROR_NO_MORE_FILES;
 done:
-    if(find!=INVALID_HANDLE_VALUE) FindClose(find); free(search); free(child); return ok;
+    if (find != INVALID_HANDLE_VALUE) FindClose(find);
+    free(search);
+    free(child);
+    return ok;
 }
+/* 收紧服务数据目录及已有子项的权限，供转换机器身份前调用；不穿越重解析点。 */
 int drop_machine_tree(const WCHAR *path) {
-    PSECURITY_DESCRIPTOR security=NULL; int ok=0;
-    if(!drop_machine_directory(path) || !ConvertStringSecurityDescriptorToSecurityDescriptorW(L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",SDDL_REVISION_1,&security,NULL)) return 0;
-    ok=machine_children(path,security,0); LocalFree(security); return ok;
+    PSECURITY_DESCRIPTOR security = NULL;
+    int ok = 0;
+    if (!drop_machine_directory(path) || !ConvertStringSecurityDescriptorToSecurityDescriptorW(L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", SDDL_REVISION_1, &security, NULL))
+        return 0;
+    ok = machine_children(path, security, 0);
+    LocalFree(security);
+    return ok;
 }
-static int secret_write(const WCHAR *path, const void *data, DWORD size, int replace,DWORD flags) {
-    DATA_BLOB input, output = {0}; int result;
-    input.pbData = (BYTE *)data; input.cbData = size;
-    if (!CryptProtectData(&input, L"Drop protected secret v1", NULL, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN|flags, &output)) return 0;
+/* 按用户或机器 DPAPI 范围保护秘密，再用指定替换策略写入文件；保护后的临时缓冲也会释放。 */
+static int secret_write(const WCHAR *path, const void *data, DWORD size, int replace, DWORD flags) {
+    DATA_BLOB input, output = {0};
+    int result;
+    input.pbData = (BYTE *)data;
+    input.cbData = size;
+    if (!CryptProtectData(&input, L"Drop protected secret v1", NULL, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN | flags, &output)) return 0;
     result = drop_file_write(path, output.pbData, output.cbData, replace);
-    sodium_memzero(output.pbData, output.cbData); LocalFree(output.pbData); return result;
+    sodium_memzero(output.pbData, output.cbData);
+    LocalFree(output.pbData);
+    return result;
 }
-int drop_secret_save(const WCHAR *path, const void *data, DWORD size) { return secret_write(path, data, size, 0,0); }
-int drop_secret_replace(const WCHAR *path, const void *data, DWORD size) { return secret_write(path, data, size, 1,0); }
-int drop_machine_secret_save(const WCHAR *path,const void *data,DWORD size) { return secret_write(path,data,size,0,CRYPTPROTECT_LOCAL_MACHINE); }
-int drop_machine_secret_replace(const WCHAR *path,const void *data,DWORD size) { return secret_write(path,data,size,1,CRYPTPROTECT_LOCAL_MACHINE); }
+/* 使用当前 Windows 用户的 DPAPI 创建秘密文件，拒绝覆盖已有文件。 */
+int drop_secret_save(const WCHAR *path, const void *data, DWORD size) {
+    return secret_write(path, data, size, 0, 0);
+}
+/* 使用用户 DPAPI 更新秘密文件；调用者负责在业务允许时选择替换。 */
+int drop_secret_replace(const WCHAR *path, const void *data, DWORD size) {
+    return secret_write(path, data, size, 1, 0);
+}
+/* 使用机器 DPAPI 创建服务秘密文件，要求目标目录已具备受限权限。 */
+int drop_machine_secret_save(const WCHAR *path, const void *data, DWORD size) {
+    return secret_write(path, data, size, 0, CRYPTPROTECT_LOCAL_MACHINE);
+}
+/* 使用机器 DPAPI 替换服务秘密文件，供已授权的服务身份转换或秘密更新使用。 */
+int drop_machine_secret_replace(const WCHAR *path, const void *data, DWORD size) {
+    return secret_write(path, data, size, 1, CRYPTPROTECT_LOCAL_MACHINE);
+}
+/* 读取并解开受保护秘密，复制为调用者拥有的缓冲；使用后必须清零并 free。 */
 int drop_secret_load(const WCHAR *path, unsigned char **data, DWORD *size) {
-    unsigned char *buffer = NULL; DWORD length; DATA_BLOB input, output = {0}; int result = 0;
+    unsigned char *buffer = NULL;
+    DWORD length;
+    DATA_BLOB input, output = {0};
+    int result = 0;
     if (!drop_file_read(path, &buffer, &length, 65536)) return 0;
-    input.pbData = buffer; input.cbData = length;
+    input.pbData = buffer;
+    input.cbData = length;
     if (CryptUnprotectData(&input, NULL, NULL, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &output)) {
         *data = malloc((size_t)output.cbData + 1);
-        if (*data) { memcpy(*data, output.pbData, output.cbData); (*data)[output.cbData] = 0; *size = output.cbData; result = 1; }
-        sodium_memzero(output.pbData, output.cbData); LocalFree(output.pbData);
+        if (*data) {
+            memcpy(*data, output.pbData, output.cbData);
+            (*data)[output.cbData] = 0;
+            *size = output.cbData;
+            result = 1;
+        }
+        sodium_memzero(output.pbData, output.cbData);
+        LocalFree(output.pbData);
     }
-    sodium_memzero(buffer, length); free(buffer); return result;
+    sodium_memzero(buffer, length);
+    free(buffer);
+    return result;
 }
+/* 只从真实控制台遮蔽读取密码，拒绝重定向输入；限制长度并恢复控制台模式，失败清空输出。 */
 int drop_password_read(const WCHAR *prompt, char *password, size_t capacity) {
     HANDLE input = GetStdHandle(STD_INPUT_HANDLE), output = GetStdHandle(STD_OUTPUT_HANDLE);
-    WCHAR buffer[1027]; DWORD mode, read = 0, written; int result;
-    /* Refuse redirected stdin: secrets must not travel through command-line pipelines. */
+    WCHAR buffer[1027];
+    DWORD mode, read = 0, written;
+    int result;
+    /* 拒绝重定向标准输入，避免秘密经命令行管道传递。 */
     if (!GetConsoleMode(input, &mode)) return 0;
     if (!SetConsoleMode(input, mode & ~(DWORD)ENABLE_ECHO_INPUT)) return 0;
     WriteConsoleW(output, prompt, (DWORD)wcslen(prompt), &written, NULL);
     result = ReadConsoleW(input, buffer, 1026, &read, NULL) != 0;
-    SetConsoleMode(input, mode); WriteConsoleW(output, L"\r\n", 2, &written, NULL);
+    SetConsoleMode(input, mode);
+    WriteConsoleW(output, L"\r\n", 2, &written, NULL);
     if (result) {
-        if (!read || (buffer[read-1] != L'\r' && buffer[read-1] != L'\n')) {
-            sodium_memzero(buffer, sizeof(buffer)); return 0;
+        if (!read || (buffer[read - 1] != L'\r' && buffer[read - 1] != L'\n')) {
+            sodium_memzero(buffer, sizeof(buffer));
+            return 0;
         }
-        while (read && (buffer[read-1] == L'\r' || buffer[read-1] == L'\n')) --read;
-        buffer[read] = 0; result = drop_to_utf8(buffer, password, capacity);
+        while (read && (buffer[read - 1] == L'\r' || buffer[read - 1] == L'\n'))
+            --read;
+        buffer[read] = 0;
+        result = drop_to_utf8(buffer, password, capacity);
     }
-    sodium_memzero(buffer, sizeof(buffer)); return result;
+    sodium_memzero(buffer, sizeof(buffer));
+    return result;
 }

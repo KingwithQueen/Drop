@@ -10,12 +10,16 @@
     <IntDir>$(DropRoot)build\obj\$(Platform)\$(Configuration)\$(MSBuildProjectName)\</IntDir>
     <VcpkgEnabled>false</VcpkgEnabled>
     <VcpkgEnableManifest>false</VcpkgEnableManifest>
-    <DropDiagnostics Condition="'$(DropProduction)'!='true'">1</DropDiagnostics>
+    <DropDiagnostics Condition="'$(DropProduction)'!='true' and Exists('$(DropRoot)dropcommon\self_test.c')">1</DropDiagnostics>
     <DropDiagnostics Condition="'$(DropProduction)'=='true'">0</DropDiagnostics>
+    <DropDiagnostics Condition="'$(DropDiagnostics)'==''">0</DropDiagnostics>
     <OutDir Condition="'$(DropProduction)'=='true'">$(DropRoot)build\production\$(Platform)\</OutDir>
     <IntDir Condition="'$(DropProduction)'=='true'">$(DropRoot)build\obj\production\$(Platform)\$(MSBuildProjectName)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup>
+    <ResourceCompile>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
     <ClCompile>
       <CompileAs>CompileAsC</CompileAs>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
@@ -28,7 +32,7 @@
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>$(DropDependencies)$(DropDependencyConfig)lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>cjson.lib;libsodium.lib;zstd.lib;crypt32.lib;advapi32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>cjson.lib;libsodium.lib;zstd.lib;libcrypto.lib;crypt32.lib;advapi32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>

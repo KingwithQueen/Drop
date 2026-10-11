@@ -34,10 +34,14 @@
     <ClCompile Include="common.c" />
     <ClCompile Include="config.c" />
     <ClCompile Include="platform.c" />
-    <ClCompile Include="self_test.c" />
+    <ClCompile Include="self_test.c" Condition="'$(DropDiagnostics)'=='1'" />
     <ClCompile Include="object.c" />
+    <ClCompile Include="pake.c" />
+    <ClCompile Include="srp_vendor.c" />
+    <ClInclude Include="pake.h" />
     <ClInclude Include="object.h" />
     <ClInclude Include="drop_common.h" />
+    <ClInclude Include="version.h" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

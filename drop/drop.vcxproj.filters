@@ -17,20 +17,28 @@
   <ItemGroup>
     <ClCompile Include="main.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="network.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="pake_client.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="network_ws.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="receipts.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="client.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="profiles.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="trust.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="transfers.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ui.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ui_data.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ui_worker.c"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ui_settings.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ui_windows.c"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ui_messages.c"><Filter>源文件</Filter></ClCompile>
     <ClInclude Include="network.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="client.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="trust.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="ui_data.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="ui_internal.h"><Filter>头文件</Filter></ClInclude>
     <Manifest Include="drop.manifest"><Filter>资源文件</Filter></Manifest>
+    <ClInclude Include="resource.h"><Filter>头文件</Filter></ClInclude>
+    <ResourceCompile Include="drop.rc"><Filter>资源文件</Filter></ResourceCompile>
+    <None Include="drop.ico"><Filter>资源文件</Filter></None>
+    <None Include="..\Dropico.png"><Filter>资源文件</Filter></None>
   </ItemGroup>
 </Project>

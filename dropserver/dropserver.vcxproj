@@ -33,6 +33,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.c" />
+    <ClCompile Include="pake_server.c" />
     <ClCompile Include="database.c" />
     <ClCompile Include="server.c" />
     <ClCompile Include="messages.c" />
@@ -40,6 +41,7 @@
     <ClCompile Include="receipts.c" />
     <ClCompile Include="maintenance.c" />
     <ClCompile Include="admin.c" />
+    <ClCompile Include="admin_pipe.c" />
     <ClCompile Include="service.c" />
     <ClCompile Include="backup.c" />
     <ClCompile Include="backup_worker.c" />
@@ -50,6 +52,10 @@
     <ClCompile Include="cloud_commands.c" />
     <ClCompile Include="..\drop\trust.c" />
     <ClInclude Include="server.h" />
+    <ClInclude Include="resource.h" />
+    <ResourceCompile Include="dropserver.rc" />
+    <None Include="dropserver.ico" />
+    <None Include="..\DropServerico.png" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="..\dropcommon\dropcommon.vcxproj"><Project>{0A0B0C01-7766-4400-8888-010101010101}</Project></ProjectReference></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

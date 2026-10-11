@@ -1,0 +1,260 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="944" viewBox="0 0 1440 944">
+<title>Drop 1.0.1 传统 Win32 紧凑布局提案</title>
+<rect width="1440" height="944" fill="#e5e7ea"/>
+<rect x="24" y="28" width="1392" height="826" fill="#f0f0f0" stroke="#777e88"/>
+<rect x="25" y="29" width="1390" height="31" fill="#fafafa" stroke="none"/>
+<rect x="36" y="38" width="15" height="15" fill="#3278be" stroke="none"/>
+<text x="61" y="51" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">Drop 1.0.1</text>
+<path d="M1289 45 L1300 45" fill="none" stroke="#50555c"/>
+<rect x="1335" y="39" width="10" height="10" fill="#fafafa" stroke="#50555c"/>
+<path d="M1380 39 L1390 49" fill="none" stroke="#50555c"/>
+<path d="M1390 39 L1380 49" fill="none" stroke="#50555c"/>
+<path d="M25 60 L1415 60" fill="none" stroke="#b8bdc4"/>
+<text x="36" y="79" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">文件(F)     查看(V)     工具(T)     帮助(H)</text>
+<path d="M25 86 L1415 86" fill="none" stroke="#b8bdc4"/>
+<rect x="35" y="92" width="101" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="44" y="110" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">添加用户…</text>
+<rect x="145" y="92" width="64" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="154" y="110" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">同步</text>
+<rect x="218" y="92" width="64" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="227" y="110" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">查找</text>
+<path d="M292 95 L292 115" fill="none" stroke="#b8bdc4"/>
+<rect x="303" y="92" width="91" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="312" y="110" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">配置与账号</text>
+<rect x="404" y="92" width="91" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="413" y="110" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">导出附件…</text>
+<rect x="505" y="92" width="104" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="514" y="110" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">恢复复核…</text>
+<text x="1188" y="111" fill="#3b5058" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">已连接  ·  Jsnowly</text>
+<path d="M25 122 L1415 122" fill="none" stroke="#b8bdc4"/>
+<rect x="34" y="132" width="246" height="26" fill="#ffffff" stroke="#9ba0a6"/>
+<text x="41" y="150" fill="#666b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">查找用户 / 输入账号</text>
+<rect x="25" y="168" width="264" height="25" fill="#e9ebee" stroke="none"/>
+<text x="33" y="186" fill="#30343a" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">用户</text>
+<path d="M25 193 L289 193" fill="none" stroke="#b8bdc4"/>
+<rect x="25" y="194" width="264" height="310" fill="#ffffff" stroke="none"/>
+<text x="35" y="213" fill="#5b626c" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">用户 / 账号</text>
+<text x="248" y="213" fill="#5b626c" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">未读</text>
+<path d="M25 222 L289 222" fill="none" stroke="#b8bdc4"/>
+<rect x="35" y="231" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="243" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">J</text>
+<text x="62" y="239" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Jsnowly（自己）</text>
+<text x="62" y="254" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">自己的消息与文件</text>
+<path d="M25 258 L289 258" fill="none" stroke="#eceef0"/>
+<rect x="25" y="258" width="264" height="35" fill="#cde2fa" stroke="none"/>
+<rect x="35" y="266" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="278" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">L</text>
+<text x="62" y="274" fill="#123a69" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">Lin</text>
+<text x="62" y="289" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">参数已更新，见附件。</text>
+<text x="260" y="281" fill="#1b5ea1" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">2</text>
+<path d="M25 293 L289 293" fill="none" stroke="#eceef0"/>
+<rect x="35" y="301" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="313" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">A</text>
+<text x="62" y="309" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Alex</text>
+<text x="62" y="324" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">日志已经收到。</text>
+<text x="260" y="316" fill="#1b5ea1" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">1</text>
+<path d="M25 328 L289 328" fill="none" stroke="#eceef0"/>
+<rect x="35" y="336" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="348" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">M</text>
+<text x="62" y="344" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Ming</text>
+<text x="62" y="359" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">稍后发送测试结果。</text>
+<path d="M25 363 L289 363" fill="none" stroke="#eceef0"/>
+<rect x="35" y="371" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="383" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">A</text>
+<text x="62" y="379" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Alice</text>
+<text x="62" y="394" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">好的，下午一起确认。</text>
+<path d="M25 398 L289 398" fill="none" stroke="#eceef0"/>
+<rect x="35" y="406" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="418" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">B</text>
+<text x="62" y="414" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Brian</text>
+<text x="62" y="429" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已完成附件校验。</text>
+<path d="M25 433 L289 433" fill="none" stroke="#eceef0"/>
+<rect x="35" y="441" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="453" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">C</text>
+<text x="62" y="449" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Chen</text>
+<text x="62" y="464" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">谢谢。</text>
+<path d="M25 468 L289 468" fill="none" stroke="#eceef0"/>
+<rect x="35" y="476" width="17" height="17" fill="#dce5ed" stroke="#8e9ba9"/>
+<text x="39" y="488" fill="#32536e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="700">Z</text>
+<text x="62" y="484" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">Zhou</text>
+<text x="62" y="499" fill="#59626e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">收到新的配置文件。</text>
+<path d="M25 503 L289 503" fill="none" stroke="#eceef0"/>
+<rect x="25" y="518" width="264" height="25" fill="#e9ebee" stroke="none"/>
+<text x="33" y="536" fill="#30343a" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">传输任务  ·  2 项</text>
+<path d="M25 543 L289 543" fill="none" stroke="#b8bdc4"/>
+<rect x="25" y="544" width="264" height="142" fill="#ffffff" stroke="none"/>
+<rect x="25" y="544" width="264" height="24" fill="#f3f3f3" stroke="none"/>
+<text x="35" y="562" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">文件</text>
+<text x="219" y="562" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">状态</text>
+<path d="M210 544 L210 664" fill="none" stroke="#dedfe2"/>
+<path d="M25 568 L289 568" fill="none" stroke="#b8bdc4"/>
+<text x="35" y="591" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">实验参数.xlsx</text>
+<text x="216" y="591" fill="#385b43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">已保存</text>
+<text x="35" y="621" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">测量记录.zip</text>
+<text x="216" y="621" fill="#1a5f9f" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">下载中</text>
+<rect x="35" y="630" width="244" height="8" fill="#e2e5e8" stroke="#c5c9ce"/>
+<rect x="36" y="631" width="151" height="6" fill="#5987b5" stroke="none"/>
+<text x="35" y="659" fill="#626974" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">62%  ·  8.0 / 12.9 MiB</text>
+<rect x="25" y="699" width="264" height="25" fill="#e9ebee" stroke="none"/>
+<text x="33" y="717" fill="#30343a" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">当前账号</text>
+<path d="M25 724 L289 724" fill="none" stroke="#b8bdc4"/>
+<rect x="25" y="725" width="264" height="96" fill="#f7f7f7" stroke="none"/>
+<text x="35" y="750" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">Jsnowly</text>
+<text x="35" y="773" fill="#5f6570" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">配置连接、登录与通知：工具 → 配置</text>
+<text x="35" y="801" fill="#5f6570" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">自己置顶  ·  会话按最近消息排序</text>
+<rect x="290" y="123" width="5" height="698" fill="#d5d7da" stroke="none"/>
+<path d="M292 123 L292 821" fill="none" stroke="#a9aeb5"/>
+<rect x="295" y="123" width="1120" height="698" fill="#ffffff" stroke="none"/>
+<rect x="295" y="123" width="1120" height="38" fill="#f0f0f0" stroke="none"/>
+<text x="306" y="148" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="16" font-weight="700">Lin</text>
+<text x="358" y="148" fill="#616872" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">账号：Lin</text>
+<text x="1244" y="147" fill="#616872" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">共 128 条消息</text>
+<path d="M295 161 L1415 161" fill="none" stroke="#b8bdc4"/>
+<rect x="295" y="162" width="1120" height="35" fill="#f5f5f5" stroke="none"/>
+<rect x="306" y="167" width="332" height="26" fill="#ffffff" stroke="#9ba0a6"/>
+<text x="313" y="185" fill="#666b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">搜索当前用户的正文</text>
+<text x="650" y="185" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">从</text>
+<rect x="674" y="167" width="128" height="26" fill="#ffffff" stroke="#9ba0a6"/>
+<text x="681" y="185" fill="#666b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">2026-10-01</text>
+<path d="M786 180 h8 l-4 4 z" fill="#616975"/>
+<text x="815" y="185" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">至</text>
+<rect x="839" y="167" width="128" height="26" fill="#ffffff" stroke="#9ba0a6"/>
+<text x="846" y="185" fill="#666b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">2026-10-11</text>
+<path d="M951 180 h8 l-4 4 z" fill="#616975"/>
+<rect x="979" y="167" width="62" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="988" y="185" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">筛选</text>
+<rect x="1052" y="167" width="62" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="1061" y="185" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">清除</text>
+<rect x="1221" y="167" width="82" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="1230" y="185" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">上一页</text>
+<rect x="1313" y="167" width="89" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="1322" y="185" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">下一页</text>
+<path d="M295 198 L1415 198" fill="none" stroke="#b8bdc4"/>
+<rect x="295" y="199" width="1120" height="23" fill="#e9edf1" stroke="none"/>
+<text x="306" y="216" fill="#535f6b" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026 年 10 月 11 日  ·  当前页 1 / 3</text>
+<rect x="295" y="222" width="1104" height="39" fill="#ffffff" stroke="none"/>
+<rect x="298" y="227" width="2" height="29" fill="#c2c8d0" stroke="none"/>
+<text x="307" y="238" fill="#343a43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Lin</text>
+<text x="392" y="238" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:12:06</text>
+<text x="1258" y="237" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已接收</text>
+<text x="307" y="256" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">早上好，昨天的测量记录已经整理完了。</text>
+<path d="M295 261 L1399 261" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="261" width="1104" height="39" fill="#f3f6fa" stroke="none"/>
+<rect x="298" y="266" width="2" height="29" fill="#829cb8" stroke="none"/>
+<text x="307" y="277" fill="#234b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Jsnowly</text>
+<text x="392" y="277" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:12:34</text>
+<text x="1258" y="276" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已读</text>
+<text x="307" y="295" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">收到。请把参数表也一起发过来，我会对照新的配置。</text>
+<path d="M295 300 L1399 300" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="300" width="1104" height="39" fill="#ffffff" stroke="none"/>
+<rect x="298" y="305" width="2" height="29" fill="#c2c8d0" stroke="none"/>
+<text x="307" y="316" fill="#343a43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Lin</text>
+<text x="392" y="316" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:13:02</text>
+<text x="1258" y="315" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已接收</text>
+<text x="307" y="334" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">参数已更新。第二组采用 150 ms 的间隔，其他设置保持一致。</text>
+<path d="M295 339 L1399 339" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="339" width="1104" height="39" fill="#f3f6fa" stroke="none"/>
+<rect x="298" y="344" width="2" height="29" fill="#829cb8" stroke="none"/>
+<text x="307" y="355" fill="#234b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Jsnowly</text>
+<text x="392" y="355" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:14:17</text>
+<text x="1258" y="354" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已读</text>
+<text x="307" y="373" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">我先检查参数，确认后开始运行。</text>
+<path d="M295 378 L1399 378" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="378" width="1104" height="39" fill="#ffffff" stroke="none"/>
+<rect x="298" y="383" width="2" height="29" fill="#c2c8d0" stroke="none"/>
+<text x="307" y="394" fill="#343a43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Lin</text>
+<text x="392" y="394" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:15:25</text>
+<text x="1258" y="393" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">附件下载中</text>
+<text x="307" y="412" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">压缩记录共 12.9 MiB，文件正在传输。</text>
+<path d="M295 417 L1399 417" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="417" width="1104" height="39" fill="#f3f6fa" stroke="none"/>
+<rect x="298" y="422" width="2" height="29" fill="#829cb8" stroke="none"/>
+<text x="307" y="433" fill="#234b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Jsnowly</text>
+<text x="392" y="433" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:16:40</text>
+<text x="1258" y="432" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">正文已保存</text>
+<text x="307" y="451" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">好的，结果出来后我会发回这里。</text>
+<path d="M295 456 L1399 456" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="456" width="1104" height="39" fill="#ffffff" stroke="none"/>
+<rect x="298" y="461" width="2" height="29" fill="#c2c8d0" stroke="none"/>
+<text x="307" y="472" fill="#343a43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Lin</text>
+<text x="392" y="472" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:18:05</text>
+<text x="1258" y="471" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已接收</text>
+<text x="307" y="490" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">注意表中的第三列是原始值，第五列为校正后的值。</text>
+<path d="M295 495 L1399 495" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="495" width="1104" height="39" fill="#f3f6fa" stroke="none"/>
+<rect x="298" y="500" width="2" height="29" fill="#829cb8" stroke="none"/>
+<text x="307" y="511" fill="#234b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Jsnowly</text>
+<text x="392" y="511" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:18:42</text>
+<text x="1258" y="510" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已读</text>
+<text x="307" y="529" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">已确认，参数表已经导出到本地。</text>
+<path d="M295 534 L1399 534" fill="none" stroke="#e6e8eb"/>
+<rect x="295" y="534" width="1104" height="39" fill="#ffffff" stroke="none"/>
+<rect x="298" y="539" width="2" height="29" fill="#c2c8d0" stroke="none"/>
+<text x="307" y="550" fill="#343a43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="700">Lin</text>
+<text x="392" y="550" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">2026-10-11 09:19:10</text>
+<text x="1258" y="549" fill="#546774" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">已接收</text>
+<text x="307" y="568" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="14" font-weight="400">后续如果有调整，我会在这条会话中补充。</text>
+<path d="M295 573 L1399 573" fill="none" stroke="#e6e8eb"/>
+<rect x="1400" y="222" width="14" height="351" fill="#f1f1f1" stroke="none"/>
+<rect x="1402" y="236" width="10" height="86" fill="#c0c4c9" stroke="none"/>
+<path d="M1403 559 h8 l-4 4 z" fill="#616975"/>
+<rect x="295" y="575" width="1120" height="25" fill="#e9ebee" stroke="none"/>
+<text x="303" y="593" fill="#30343a" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">附件  ·  当前会话 / 传输状态</text>
+<path d="M295 600 L1415 600" fill="none" stroke="#b8bdc4"/>
+<rect x="295" y="601" width="1120" height="23" fill="#f5f5f5" stroke="none"/>
+<text x="307" y="618" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">文件名</text>
+<text x="812" y="618" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">大小</text>
+<text x="937" y="618" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">保存状态</text>
+<text x="1212" y="618" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">操作</text>
+<path d="M800 601 L800 677" fill="none" stroke="#d6d9de"/>
+<path d="M925 601 L925 677" fill="none" stroke="#d6d9de"/>
+<path d="M1200 601 L1200 677" fill="none" stroke="#d6d9de"/>
+<path d="M295 624 L1415 624" fill="none" stroke="#b8bdc4"/>
+<text x="307" y="646" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">实验参数.xlsx</text>
+<text x="812" y="645" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">24.6 KiB</text>
+<text x="937" y="645" fill="#385b43" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">已完整保存</text>
+<rect x="1211" y="627" width="87" height="23" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="1220" y="645" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">导出…</text>
+<text x="307" y="671" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">测量记录.zip</text>
+<text x="812" y="670" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">12.9 MiB</text>
+<text x="937" y="670" fill="#1a5f9f" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">正文已保存，附件下载 62%</text>
+<rect x="1211" y="652" width="87" height="23" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="1220" y="670" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">查看进度</text>
+<path d="M295 679 L1415 679" fill="none" stroke="#b8bdc4"/>
+<rect x="295" y="681" width="1120" height="140" fill="#f0f0f0" stroke="none"/>
+<text x="307" y="704" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="700">发送给：Lin</text>
+<text x="1250" y="704" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">正文 0 / 65,536 字节</text>
+<rect x="306" y="714" width="1098" height="59" fill="#ffffff" stroke="#9ba0a6"/>
+<text x="313" y="732" fill="#666b73" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">输入消息…</text>
+<rect x="306" y="784" width="94" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="315" y="802" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">添加附件…</text>
+<rect x="410" y="784" width="80" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="419" y="802" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">清空附件</text>
+<text x="505" y="803" fill="#5b636e" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">待发送附件：0 个</text>
+<text x="1050" y="802" fill="#616975" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="11" font-weight="400">Ctrl+Enter 发送</text>
+<rect x="1220" y="784" width="64" height="26" fill="#f7f7f7" stroke="#a7abb1"/>
+<text x="1229" y="802" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">清空</text>
+<rect x="1294" y="784" width="110" height="26" fill="#ddeafa" stroke="#3878bd"/>
+<text x="1303" y="802" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">发送</text>
+<rect x="25" y="822" width="1390" height="31" fill="#f0f0f0" stroke="none"/>
+<path d="M25 822 L1415 822" fill="none" stroke="#b8bdc4"/>
+<text x="35" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">连接正常</text>
+<text x="188" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">账号：Jsnowly</text>
+<text x="429" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">未读：3</text>
+<text x="570" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">待发送：0</text>
+<text x="742" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">附件下载：1</text>
+<text x="1030" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">最近同步：09:19:12</text>
+<text x="1272" y="843" fill="#202124" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">版本：1.0.1</text>
+<path d="M175 826 L175 849" fill="none" stroke="#b8bdc4"/>
+<path d="M416 826 L416 849" fill="none" stroke="#b8bdc4"/>
+<path d="M557 826 L557 849" fill="none" stroke="#b8bdc4"/>
+<path d="M729 826 L729 849" fill="none" stroke="#b8bdc4"/>
+<path d="M1017 826 L1017 849" fill="none" stroke="#b8bdc4"/>
+<path d="M1259 826 L1259 849" fill="none" stroke="#b8bdc4"/>
+<path d="M1407 849 L1412 844" fill="none" stroke="#9fa5ad"/>
+<path d="M1403 849 L1412 840" fill="none" stroke="#9fa5ad"/>
+<path d="M1399 849 L1412 836" fill="none" stroke="#9fa5ad"/>
+<text x="25" y="891" fill="#343d48" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="15" font-weight="700">传统 Win32 紧凑布局提案  ·  待确认  ·  所有用户、消息、进度均为示意数据</text>
+<text x="25" y="920" fill="#57616d" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="13" font-weight="400">保留左侧用户、右侧消息；发送者与时间置于正文上方。同一窗口显示 9 条消息，附件使用紧凑表格；配置集中到独立窗口。</text>
+<text x="25" y="939" fill="#57616d" font-family="Microsoft YaHei UI,Microsoft YaHei,sans-serif" font-size="12" font-weight="400">原生控件与字体按目标 DPI 直接绘制；分隔条与字号可调整。确认后实现，当前客户端仍为临时布局。</text>
+</svg>

@@ -1,10 +1,10 @@
 # 协议 v1
 
-HTTPS origin URL 接受域名、IPv4 与方括号 IPv6；拒绝明文 HTTP、用户名、密码、查询、fragment 及除根路径外的路径。客户端不跟随重定向，不忽略证书错误。UTF-8 JSON；请求 Content-Type 为 `application/json`。所有秘密只通过 HTTPS 请求正文或 Authorization 传递，不能进入 URL。
+HTTP/HTTPS origin URL 接受域名、IPv4 与方括号 IPv6；拒绝用户名、密码、查询、fragment 及除根路径外的路径。客户端不跟随重定向，不忽略 HTTPS 证书错误，不自动降级。以下表格描述业务层：HTTPS/WSS 直接使用 TLS 内的 UTF-8 JSON、Bearer 和二进制附件，不叠加 PAKE；HTTP/WS 必须先通过 PAKE，再将业务正文、令牌及响应包在认证密文中，禁止原明文登录/令牌端点。HTTP 记录和加密 WS 的完整格式见 [PAKE.md](PAKE.md)。秘密不能进入 URL。
 
 固定 ID 为 16 个随机字节的 32 位小写十六进制；令牌为 32 个随机字节的 64 位小写十六进制字符串。`server_id` 表示服务器身份，`generation` 表示同步代次。序号、长度、偏移、时间戳和配额等 64 位值一律使用规范十进制字符串（无符号、无空格、不允许多余前导零），严格检查溢出；版本和有明确小范围的枚举可用 JSON 整数。
 
-上限：HTTP 头部 16 KiB，JSON 2 MiB，正文 1 MiB UTF-8，32 附件，16 层 JSON，单个对象/数组最多 256 成员、全体最多 4096 结构逗号，登录名 3–64 个 ASCII 小写字母/数字/`_.-`，显示名及设备名称 128 UTF-8 字节，密码 12–1024 UTF-8 字节。重复键、NUL（包括 `\u0000`）、不合法 UTF-8、尾随数据拒绝。解析前检查嵌套与结构复杂度，避免恶意深度和重复键检查耗时失控。阶段一登录请求必须包含 Content-Length，暂不接受 chunked JSON。
+上限：HTTP 头部 16 KiB，JSON 2 MiB，正文 1 MiB UTF-8，32 附件，16 层 JSON，单个对象/数组最多 256 成员、全体最多 4096 结构逗号，登录名 3–64 个 ASCII 英文字母（支持大小写）/数字/`_.-`，显示名及设备名称 128 UTF-8 字节，密码 12–1024 UTF-8 字节。账号名保留输入大小写并按大小写精确匹配；`Jsnowly` 与 `jsnowly` 是不同账号，现有小写账号不改名。重复键、NUL（包括 `\u0000`）、不合法 UTF-8、尾随数据拒绝。解析前检查嵌套与结构复杂度，避免恶意深度和重复键检查耗时失控。阶段一登录请求必须包含 Content-Length，暂不接受 chunked JSON。
 
 | 接口 | 权限 | 当前状态 |
 | --- | --- | --- |
@@ -13,6 +13,7 @@ HTTPS origin URL 接受域名、IPv4 与方括号 IPv6；拒绝明文 HTTP、用
 | GET `/api/v1/devices` | Bearer token | 只返回当前账号的设备 ID、名称及撤销状态，暂最多 100；已实现，分页待后续。 |
 | POST `/api/v1/logout` | Bearer token | 撤销当前设备令牌；已实现。 |
 | POST `/api/v1/accounts` | Bearer token | `login` 精确查询启用账号的 ID、登录名及显示名；已实现。 |
+| POST `/api/v1/profiles` | Bearer token + 已知身份范围 | `users:[{user_id,login?}]`，最多 100 个；返回 profiles，字段为 user_id、login、display_name、enabled、deleted。自己、会话参与者或能精确提供该身份登录名的联系人可读取；无权限身份省略。 |
 | POST `/api/v1/messages` | Bearer token | `request_id,recipient_user_id`（省略为自己）、body、attachments 对象 ID 数组；正文为空时必须有附件。附件必须由发送账号拥有、完整且尚未引用。返回 message_id 和 duplicate；已实现。 |
 | POST `/api/v1/sync` | Bearer token | `generation,after,limit`；默认 50、最多 100，另限制响应大小。返回 server_id、generation、events、next、more；已实现。 |
 | WSS `/api/v1/events` | Bearer token | 升级前和发送/心跳时认证；changed 提示变化；持久同步补齐；已实现，暂最多 16 连接。 |
@@ -23,7 +24,11 @@ HTTPS origin URL 接受域名、IPv4 与方括号 IPv6；拒绝明文 HTTP、用
 | GET `/api/v1/attachments/<id>/chunks/<index>` | Bearer token + 消息参与者 | 已引用完整对象的认证明文块，application/octet-stream；已实现。当前采用按块续传，未提供 HTTP Range。 |
 | POST `/api/v1/saved`、POST `/api/v1/read` | Bearer token + 对象权限 | 正文/附件按设备确认，已读按账号同步；阶段五草案。 |
 
-管理操作只通过本机 `dropserver account-create`，在服务器停止时执行，并受目录 DACL 和独占运行锁保护。不开放网络账号管理端点。登录对未知账号做同等 Argon2id 校验，限制全局每秒 4 次、最多 2 个密码校验并发；账号连续 5 次失败暂停 60 秒。设备 token 30 天到期，重新登录同一设备使旧 token 失效；只保存 SHA-256 摘要。未登录、撤销、到期及账号禁用均拒绝。自动刷新将在同步阶段补充。
+本机管理命令支持在线和离线，详见 ACCOUNT_MANAGEMENT.md。在线管道仅允许运行用户、SYSTEM 和提升的管理员，拒绝远程连接；以独立用途标签从实例密钥派生 XChaCha20-Poly1305 密钥，帧上限 512 KiB，请求/响应绑定不同方向，每次连接以服务器新挑战防止重放。离线仍须取得目录独占锁，不开放网络管理端点。
+
+登录对未知账号做同等 Argon2id 校验，限制每秒 4 次、最多 2 个密码校验并发；连续 5 次失败暂停 60 秒。设备 token 30 天到期，重新登录同设备使旧 token 失效，只保存摘要。未登录、撤销、到期、禁用及删除均拒绝。登录提交前重新核对密码哈希或 PAKE 材料版本，避免旧认证跨越在线重置事务签发令牌。
+
+改名、启停或删除提交后通过现有 WebSocket changed 提示补拉资料，通知不含名称、正文或凭据；每批至多 100 个已知身份，消息游标独立。通知丢失由定时对账补齐。删除资料返回空 login、最后显示名、enabled=false、deleted=true；原登录名只在加密库内部用于验证此前精确查找过的身份。资料修改不改写历史消息身份和内容。
 
 HTTP 错误 JSON：`{"error":"invalid_argument"}`。稳定错误名称由 `drop_error_name` 定义，HTTP 400 参数/格式、401 凭据、404 不支持、413 格式/文件超限、409 冲突、507 空间/账号配额不足、500 持久化失败。507 的稳定名称为 space_unavailable；任务和已有历史保留。客户端另区分 network_error、certificate_error 和 protocol_error。服务端不返回数据库原始错误及秘密。
 

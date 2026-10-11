@@ -140,8 +140,10 @@
   <ItemGroup>
     <ClCompile Include="main.c" />
     <ClCompile Include="network.c" />
+    <ClCompile Include="pake_client.c" />
     <ClCompile Include="network_ws.c" />
     <ClCompile Include="client.c" />
+    <ClCompile Include="profiles.c" />
     <ClCompile Include="receipts.c" />
     <ClCompile Include="trust.c" />
     <ClCompile Include="transfers.c" />
@@ -149,12 +151,18 @@
     <ClCompile Include="ui_data.c" />
     <ClCompile Include="ui_worker.c" />
     <ClCompile Include="ui_settings.c" />
+    <ClCompile Include="ui_windows.c" />
+    <ClCompile Include="ui_messages.c" />
     <ClInclude Include="ui_data.h" />
     <ClInclude Include="ui_internal.h" />
     <Manifest Include="drop.manifest" />
     <ClInclude Include="trust.h" />
     <ClInclude Include="client.h" />
     <ClInclude Include="network.h" />
+    <ClInclude Include="resource.h" />
+    <ResourceCompile Include="drop.rc" />
+    <None Include="drop.ico" />
+    <None Include="..\Dropico.png" />
     <ProjectReference Include="..\dropcommon\dropcommon.vcxproj">
       <Project>{0A0B0C01-7766-4400-8888-010101010101}</Project>
     </ProjectReference>

@@ -10,3 +10,10 @@ third_party/downloads/
 *.log
 *.user
 __pycache__/
+
+# Local verification sources and scripts are not part of the source release.
+/tests/
+/scripts/Verify-*.ps1
+/dropcommon/self_test.c
+*.pyc
+.pytest_cache/

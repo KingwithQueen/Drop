@@ -1,6 +1,12 @@
 # 存储格式与迁移
 
-当前格式：协议 1，服务器数据库 schema 9，客户端数据库 schema 4，运行密钥包 1，附件格式 1，恢复包和备份格式 1。以下描述已实现格式。业务内部 UTF-8，Win32 文件路径与界面边界为 UTF-16。
+当前格式：协议 1，服务器数据库 schema 11，客户端数据库 schema 4，运行密钥包 1，附件格式 1，恢复包和备份格式 1。产品版本仍为 1.0.1。以下描述已实现格式。业务内部 UTF-8，Win32 文件路径与界面边界为 UTF-16。
+
+1.0.1 的原生用户列表使用可重建的 ui_contacts(user_id,login) 登录名缓存，并增加 ui_profiles(user_id,login,display_name,enabled,deleted) 资料缓存。缓存位于当前账号自己的客户端数据库，按需建立，不保存密码或令牌，不提升消息 schema。通过认证接口刷新自己、已有参与者和精确查找过的联系人；资料分页独立于正文游标，不能据此跳过消息。
+
+schema 11 在 accounts 增加 deleted_at（默认 0）和 former_login（默认空）。升级前保存加密 schema-10 回退快照；删除在一个事务中撤销设备、移除 account_pake、清除 password_hash，将登录名替换为正常登录规则禁止的内部占位名，同时记录原登录名。账户行及 user_id 留存，保持消息、会话和附件所有权等外键。former_login 仅用于验证此前已知身份的资料请求，不作为登录名或响应字段。同名新账号获得新 user_id。改显示名与删除均不改变正文、附件密文和存储密钥。
+
+在线管理读取受保护的运行密钥包进行认证，数据库和目录独占锁仍由原服务器拥有；仅在线执行器在原数据库连接及相应锁下修改，不允许两个进程直接写库。
 
 服务器目录受当前运行用户、SYSTEM、Administrators 的受保护 DACL 限制。迁移为 runtime-machine.dpapi 后仅允许 SYSTEM 和 Administrators；机器 DPAPI 保护与 DACL 必须同时存在。实际 LocalSystem 服务身份解锁与整个目录树权限已通过管理员 SCM 验收。`run.lock` 为独占句柄；数据库、密钥和管理命令只允许一个进程拥有目录。`runtime-user.dpapi` 加密保存固定 `DROPKEY1` magic、32 字节独立随机数据库材料、32 字节独立随机附件主密钥、server_id 和 generation。秘密不进入配置、命令行和日志。二进制字段均为字节数组，无平台对齐差异；两 ID 各含结束零，总大小 138 字节。
 
@@ -12,7 +18,7 @@ schema 2 增加 conversations、messages、account_sequences 和 events。会话
 
 schema 3 增加 objects、chunks、attachments；上传所有权/请求 ID 唯一，块索引唯一，附件对象只允许引用一次。objects 保存原名、长度、原文 SHA-256、加密头部及 uploading/complete 状态；chunks 的原文块摘要位于 SQLCipher 内，attachments 保留顺序。新消息指纹绑定收件人、正文长度/内容与有序附件 ID。已有 schema-2 无附件文本仍可按原指纹幂等重试，修改正文仍冲突。
 
-空库先建立加密 schema 1，再逐级升级到 9。每次升级前，在独占启动锁下检查 WAL checkpoint 成功，复制加密页到唯一 `migration-v<旧版本>.<随机 ID>.db`，刷新文件并用原密钥解锁及 integrity_check，通过后才执行升级事务。回退副本不覆盖旧快照；仍须保管相匹配的原用户 DPAPI 包。非空 schema-1 账号及 schema-2 消息迁移已实际验证；可移植恢复已通过隔离新目录原生验收。未知格式拒绝，密钥包与数据库身份/代次错配拒绝。
+空库先建立加密 schema 1，再逐级升级到 11。每次升级前，在独占启动锁下检查 WAL checkpoint 成功，复制加密页到唯一 `migration-v<旧版本>.<随机 ID>.db`，刷新文件并用原密钥解锁及 integrity_check，通过后才执行升级事务。回退副本不覆盖旧快照；仍须保管相匹配的原用户 DPAPI 包。非空 schema-1 账号及 schema-2 消息迁移已实际验证；可移植恢复已通过隔离新目录原生验收。未知格式拒绝，密钥包与数据库身份/代次错配拒绝。
 
 客户端 session.dpapi 保存服务器 URL、ID、账号/设备 ID、代次、token 及可选绝对 CA 文件路径，不保存密码。数据按服务器 ID/账号 ID 分目录；SQLite schema 1 为 meta、pending、messages，schema 2 增加 pending_files 与 downloads。发送附件先复制并刷新为随机 local_id.source，再事务记录正文/附件任务；上传成功保留 object_id.file。同步事务保存整页正文、下载任务及连续游标，错误页回滚；完成所有正文页后再下载。失败文件保留 .part、进度/错误，不妨碍其它下载任务。每块刷新后更新保存字节数，重启按实际 .part 长度向下取整到完整块续传；全文件长度和 SHA-256 通过后才原子发布为 .file 并记录 complete。默认内容可明文保存，DACL 隔离，令牌只有 DPAPI 文件持久副本。发现同一服务器的新代次时，事务清零正文和状态游标，保留本机正文、完整文件和通知标记；结果不确定的 queued 发送任务转为 restore_review，用户核对后明确重试。旧快照之外的未完成下载暂停，快照重放到对应消息后才恢复。
 

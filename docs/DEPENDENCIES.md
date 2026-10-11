@@ -11,6 +11,7 @@
 | [SQLite](https://sqlite.org/) | 3.53.4 port 2 | Public domain | 客户端专用；不与 SQLCipher 在同一程序链接，以免同名符号混用。 |
 | [libsodium](https://github.com/jedisct1/libsodium) | 1.0.22 port 1 | ISC | 随机 ID、SHA-256、Argon2id、XChaCha20-Poly1305。固定 RELEASE 标签及哈希。 |
 | [Zstandard](https://github.com/facebook/zstd) | 1.5.7 | BSD-3-Clause（采用此许可）或 GPL-2.0 | 正文存储压缩；不对附件重复压缩。 |
+| [csrp SRP-6a](https://github.com/cocagne/csrp/tree/rfc5054_compat) | b1a6ebc3331672694149469de6f33ce3c69e1fe9 | MIT | vendor/csrp 中原版源码；OpenSSL C 包装、固定 4096 位/SHA-256、密码认证。源码 SHA-256 及包装边界见 vendor/csrp/PROVENANCE.md。 |
 | WinHTTP / DPAPI | Windows SDK | Microsoft Windows SDK 条款 | 系统 C API；客户端 TLS 验证与用户范围秘密保护。 |
 
 传递依赖包括 zlib 1.3.2 port 2、Tcl 9.0.3 port 2（SQLCipher amalgamation 生成）、libtommath、minizip、pkgconf 和 vcpkg 构建辅助脚本；完整版本及许可保留于 `third_party/installed-x64/vcpkg/status`、`third_party/installed-Win32/vcpkg/status` 和各 `share/<包>/copyright`。发布候选只打包运行所需 DLL 和许可，构建工具不进入产品包。

@@ -1,5 +1,7 @@
 # 客户端证书校验
 
+本说明适用于明确配置的 HTTPS/WSS 模式，该模式保留 TLS 且不叠加应用 PAKE 加密。HTTP/WS 使用独立的密码认证及加密记录，见 [PAKE.md](PAKE.md)。地址决定模式，没有自动降级。
+
 默认无 CA 文件时，WinHTTP 使用 Windows 默认链、主机名、有效期和用途检查，不忽略证书错误。私有 CA 模式由用户明确提供一个 PEM 证书文件；当前读取其中一个根/受控信任证书，证书文件路径保存为绝对路径。该设置只影响此客户端的连接，不写系统信任库。
 
 私有 CA 模式只将 unknown-CA 的判定交给应用内独占根链引擎，其余 WinHTTP 检查保持启用。在 SENDING_REQUEST 回调中查询当前实际 TLS 证书，使用 exclusive-root CryptoAPI chain engine 和 SSL policy 再验证签名链、主机名、日期和 serverAuth 用途；拒绝时在 HTTP 头和正文发送前关闭请求。既不先发凭据再查证书，也不先无认证探测后信任另一条连接。每次独立会话重新验证，不跟随重定向。
