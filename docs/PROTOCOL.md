@@ -8,13 +8,15 @@ HTTP/HTTPS origin URL 接受域名、IPv4 与方括号 IPv6；拒绝用户名、
 
 | 接口 | 权限 | 当前状态 |
 | --- | --- | --- |
-| GET `/api/v1/server-info` | 无需登录 | 返回版本、固定服务器 ID、同步代次；已实现。 |
+| GET `/api/v1/server-info` | 无需登录 | 返回版本、固定服务器 ID、同步代次及 `message_deletion:true` 能力；已实现。 |
 | POST `/api/v1/login` | 账号密码 | `login,password,device_id,device_name`；返回账号/设备/服务器 ID、代次及 token；已实现。 |
 | GET `/api/v1/devices` | Bearer token | 只返回当前账号的设备 ID、名称及撤销状态，暂最多 100；已实现，分页待后续。 |
 | POST `/api/v1/logout` | Bearer token | 撤销当前设备令牌；已实现。 |
 | POST `/api/v1/accounts` | Bearer token | `login` 精确查询启用账号的 ID、登录名及显示名；已实现。 |
 | POST `/api/v1/profiles` | Bearer token + 已知身份范围 | `users:[{user_id,login?}]`，最多 100 个；返回 profiles，字段为 user_id、login、display_name、enabled、deleted。自己、会话参与者或能精确提供该身份登录名的联系人可读取；无权限身份省略。 |
 | POST `/api/v1/messages` | Bearer token | `request_id,recipient_user_id`（省略为自己）、body、attachments 对象 ID 数组；正文为空时必须有附件。附件必须由发送账号拥有、完整且尚未引用。返回 message_id 和 duplicate；已实现。 |
+| POST `/api/v1/messages/delete` | Bearer token + 发送账号 | `generation,message_id`；按账号授权，允许同账号的不同设备删除；已实现。 |
+| POST `/api/v1/deletions` | Bearer token | `generation,after`；独立账号删除序列，每页最多 50 条；已实现。 |
 | POST `/api/v1/sync` | Bearer token | `generation,after,limit`；默认 50、最多 100，另限制响应大小。返回 server_id、generation、events、next、more；已实现。 |
 | WSS `/api/v1/events` | Bearer token | 升级前和发送/心跳时认证；changed 提示变化；持久同步补齐；已实现，暂最多 16 连接。 |
 | POST `/api/v1/uploads` | Bearer token + 所有权 | request_id、filename、total_size、sha256；创建幂等上传，返回对象信息；已实现。 |
@@ -35,6 +37,16 @@ HTTP 错误 JSON：`{"error":"invalid_argument"}`。稳定错误名称由 `drop_
 阶段五新增保存与已读接口均须 Bearer 认证，generation 必须匹配。`POST /api/v1/saved` 输入 `{generation,body_after,objects:[{object_id,sha256}]}`；正文位置不能越过账号持久序号，最多 32 个已完整保存附件。确认按账号/设备记录，重复请求无新增状态事件，返回 `{saved:true,changed:bool}`。客户端下载长度和 SHA-256 通过后才提交附件确认，正文确认在附件下载前提交。
 
 `POST /api/v1/read` 输入 `{generation,conversation_id,message_id}`，核实会话参与权限，账号级已读位置只能前进，返回 `{read:true,changed:bool}`。本机阅读意图先持久排队，断网不丢失；其它账号设备同步后清除该会话已读位置之前的本机未读。
+
+1.0.1 的界面客户端把阅读与附件传输分开调度：从本机快照立即展示正文，后台按操作顺序持久记录阅读，先提交 read 并拉取 states。接收状态先发布到窗口，再推进批量上传/下载；交互请求到达时，传输在已保存的分块边界让出线程。没有改变协议字段、只向前推进规则、设备保存确认或状态游标；网络失败仍保留持久待提交阅读。
+
+1.0.2 新增独立删除序列，保留协议版本 1、正文和状态游标。新客户端根据 server-info 的 `message_deletion:true` 启用删除；能力缺失时保持普通收发，禁用删除。服务器及全部客户端须升级到本次构建，旧客户端不能同步移除已缓存消息。账户删除仍保留历史消息。
+
+`POST /api/v1/messages/delete` 输入 `{generation,message_id}`。认证账号必须等于该消息的 sender_user_id，不比较 sender_device_id；接收账号或第三方返回 401，错误代次返回 409。删除事务再次核对当前令牌，原子保存删除标记、清除活动正文和附件引用、生成双方账号的删除事件，自发只生成一份。返回 `{deleted:true,changed:bool,message:删除标记}`；重复删除返回 changed=false，不新增事件。保留原消息身份、顺序及幂等指纹，同 request_id 重放不能恢复内容。
+
+`POST /api/v1/deletions` 返回 `{server_id,generation,events:[{seq,message}],next,more}`。删除标记包含 message_id、request_id、conversation_id、sender_user_id、recipient_user_id、sender_device_id、created_at、server_order、deleted_at 及 deleted=true。时间、序号与顺序均为十进制字符串。每账号序列连续且独立于正文及 states，WSS 只发送 changed 提示；客户端在同一事务应用完整页和删除游标，失败不得推进游标，文件回收仅在提交后执行。标记可以先于正文到达，新设备不下载已删除内容。
+
+`/sync` 中已删除消息保留身份、时间和顺序，返回 deleted=true、deleted_at、空 body 和空 attachments。删除后参与者再次请求原附件得到 409，其他账号仍被拒绝；晚到的原附件保存确认安全忽略。已退役附件不能绑定到新消息。恢复旧备份时重新对账，同账号发送者的已知删除标记会重新排队，客户端不显示已知删除内容；旧备份及用户已经导出的文件不受本次删除影响。
 
 `POST /api/v1/states` 输入 `{generation,after}`，返回 `{server_id,generation,events:[{seq,kind,data}],next,more}`，默认 50 条。此游标独立于消息正文游标。body_saved 的 data 为 conversation_id/user_id/device_id/server_order；object_saved 为 conversation_id/user_id/device_id/object_id；read 为 conversation_id/user_id/server_order。参与会话的双方账号均获得相应状态，自发只生成一份账号事件。server_order 为代次内持久全局消息顺序，64 位十进制字符串；保存状态和游标在本机同一事务提交。WSS 仍只提示 changed，不传递正文或秘密。
 

@@ -6,7 +6,7 @@ typedef struct drop_detail drop_detail;
 /* 本机历史列表的一行；拥有 content，附件名称和状态直接用于消息绘制。 */
 typedef struct drop_history_row {
     char id[DROP_ID_CAP];
-    int pending, unread;
+    int pending, unread, deletable;
     WCHAR time[32], direction[96], preview[320], files[48], state[96];
     WCHAR sender[160];
     int mine;
@@ -20,7 +20,7 @@ typedef struct drop_peer {
 } drop_peer;
 /* 一页历史及本机任务统计，new_notifications 来自持久去重；由后台构造并移交界面。 */
 typedef struct drop_history {
-    int count, more, unread, new_notifications, pending_count, downloads, restore_review;
+    int count, more, unread, new_notifications, pending_count, downloads, restore_review, pending_deletes, deletion_supported;
     drop_history_row rows[DROP_HISTORY_PAGE];
     char self[DROP_ID_CAP], peer[DROP_ID_CAP];
     int peer_count;

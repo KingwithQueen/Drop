@@ -48,7 +48,7 @@ int drop_client_files_schema(drop_client *c) {
     int version = -1;
     if (sqlite3_prepare_v2(c->database, "PRAGMA user_version", -1, &s, NULL) == SQLITE_OK && sqlite3_step(s) == SQLITE_ROW) version = sqlite3_column_int(s, 0);
     sqlite3_finalize(s);
-    if (version >= 2 && version <= 4) return 1;
+    if (version >= 2 && version <= 5) return 1;
     if (version != 1) return 0;
     if (!sql(c->database,
             "BEGIN IMMEDIATE; CREATE TABLE pending_files(local_id TEXT PRIMARY KEY,request_id TEXT NOT NULL REFERENCES pending(request_id),"
@@ -285,6 +285,11 @@ create_upload:
     }
     crypto_hash_sha256_init(&hash_state);
     for (index = 0; index < chunks; ++index) {
+        /* 已上传块由服务器持久记录；交互到达时让出线程，下轮核对位图后安全续传。 */
+        if (c->work_pending && WaitForSingleObject(c->work_pending, 0) == WAIT_OBJECT_0) {
+            error = DROP_E_PENDING;
+            goto done;
+        }
         uint64_t remaining = total - index * DROP_CHUNK_SIZE;
         DWORD amount = (DWORD)(remaining > DROP_CHUNK_SIZE ? DROP_CHUNK_SIZE : remaining);
         if (!ReadFile(file, buffer, amount, &got, NULL) || got != amount) {
@@ -501,7 +506,8 @@ static drop_error download_one(drop_client *c, const char *id, uint64_t total, c
             error = DROP_E_DATABASE;
             goto done;
         }
-        if (position < total && c->download_quantum && c->downloaded_bytes >= c->download_quantum) {
+        if (position < total &&
+            ((c->download_quantum && c->downloaded_bytes >= c->download_quantum) || (c->work_pending && WaitForSingleObject(c->work_pending, 0) == WAIT_OBJECT_0))) {
             error = DROP_OK;
             goto done;
         }
@@ -537,7 +543,7 @@ drop_error drop_client_downloads(drop_client *c) {
     while ((step = sqlite3_step(s)) == SQLITE_ROW) {
         char id[DROP_ID_CAP], sha[65];
         sqlite3_int64 total = sqlite3_column_int64(s, 1);
-        if (c->download_quantum && c->downloaded_bytes >= c->download_quantum) {
+        if ((c->download_quantum && c->downloaded_bytes >= c->download_quantum) || (c->work_pending && WaitForSingleObject(c->work_pending, 0) == WAIT_OBJECT_0)) {
             step = SQLITE_DONE;
             break;
         }

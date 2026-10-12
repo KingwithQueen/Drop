@@ -27,7 +27,7 @@ int drop_client_ui_schema(drop_client *c) {
             "CREATE TABLE IF NOT EXISTS ui_profiles(user_id TEXT PRIMARY KEY,login TEXT NOT NULL,display_name TEXT NOT NULL,enabled INTEGER NOT NULL,deleted INTEGER NOT NULL)",
             NULL, NULL, NULL) != SQLITE_OK)
         return 0;
-    if (version == 3 || version == 4) return 1;
+    if (version >= 3 && version <= 5) return 1;
     if (version != 2) return 0;
     if (sqlite3_exec(c->database,
             "BEGIN IMMEDIATE; CREATE TABLE ui_messages(message_id TEXT PRIMARY KEY REFERENCES messages(message_id),"
@@ -130,7 +130,8 @@ drop_history *drop_ui_history(drop_client *c, int page, const char *search, int6
     }
     if (sqlite3_prepare_v2(c->database,
             "INSERT INTO ui_messages SELECT message_id,CASE WHEN device=?1 THEN 0 ELSE 1 END,"
-            "CASE WHEN device=?1 THEN 1 ELSE 0 END FROM messages WHERE message_id NOT IN(SELECT message_id FROM ui_messages)",
+            "CASE WHEN device=?1 THEN 1 ELSE 0 END FROM messages WHERE message_id NOT IN(SELECT message_id FROM ui_messages) AND "
+            "message_id NOT IN(SELECT message_id FROM message_deletions) AND message_id NOT IN(SELECT message_id FROM pending_deletes)",
             -1, &s, NULL) != SQLITE_OK)
         goto fail;
     bind(s, 1, c->device);
@@ -151,6 +152,8 @@ drop_history *drop_ui_history(drop_client *c, int page, const char *search, int6
     view->pending_count = scalar(c->database, "SELECT count(*) FROM pending WHERE state='queued'");
     view->restore_review = scalar(c->database, "SELECT count(*) FROM pending WHERE state='restore_review'");
     view->downloads = scalar(c->database, "SELECT count(*) FROM downloads WHERE state!='complete'");
+    view->pending_deletes = scalar(c->database, "SELECT count(*) FROM pending_deletes");
+    view->deletion_supported = c->deletion_supported;
     /* 即使关闭 Windows 通知，也持久保存通知去重状态，避免重新开启后重复提醒旧消息。 */
     if (sqlite3_exec(c->database, "UPDATE ui_messages SET notified=1 WHERE notified=0", NULL, NULL, NULL) != SQLITE_OK) goto fail;
     if (sqlite3_prepare_v2(c->database,
@@ -205,7 +208,8 @@ drop_history *drop_ui_history(drop_client *c, int page, const char *search, int6
             "EXISTS(SELECT 1 FROM account_reads r WHERE r.conversation_id=m.conversation_id AND r.user_id=m.recipient AND r.read_order>=o.server_order),o.message_id IS NULL,"
             "coalesce((SELECT display_name||CASE WHEN deleted THEN '（已删除）' WHEN enabled=0 THEN '（已停用）' ELSE '' END FROM ui_profiles WHERE user_id=m.sender),(SELECT "
             "login FROM ui_contacts WHERE user_id=m.sender),m.sender)"
-            " FROM messages m LEFT JOIN message_orders o USING(message_id) WHERE created_at>=?1 AND created_at<=?2 AND "
+            " FROM messages m LEFT JOIN message_orders o USING(message_id) WHERE NOT EXISTS(SELECT 1 FROM message_deletions d WHERE d.message_id=m.message_id) AND "
+            "NOT EXISTS(SELECT 1 FROM pending_deletes d WHERE d.message_id=m.message_id) AND created_at>=?1 AND created_at<=?2 AND "
             "(?3='' OR CASE WHEN sender=?4 THEN recipient ELSE sender END=?3) ORDER BY created_at DESC,m.rowid DESC",
             -1, &s, NULL) != SQLITE_OK)
         goto fail;
@@ -237,6 +241,7 @@ drop_history *drop_ui_history(drop_client *c, int page, const char *search, int6
         row->mine = !strcmp(sender, c->user);
         if (!drop_to_wide((const char *)sqlite3_column_text(s, 14), row->sender, 160)) goto fail;
         if (row->mine) wcscat_s(row->sender, 160, L"（自己）");
+        row->deletable = row->mine && !sqlite3_column_int(s, 13);
         strcpy_s(row->id, sizeof(row->id), (const char *)sqlite3_column_text(s, 0));
         time_text(sqlite3_column_int64(s, 1), row->time);
         row->unread = sqlite3_column_int(s, 9);

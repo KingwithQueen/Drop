@@ -177,6 +177,7 @@ static int api_request_inner(struct mg_connection *connection) {
         if (!response) return error_json(connection, 500, DROP_E_IO);
         cJSON_AddNumberToObject(response, "protocol_version", DROP_PROTOCOL_VERSION);
         cJSON_AddStringToObject(response, "version", DROP_VERSION);
+        cJSON_AddBoolToObject(response, "message_deletion", 1);
         cJSON_AddStringToObject(response, "transport", request->is_ssl ? "tls" : DROP_PAKE_SUITE);
         cJSON_AddStringToObject(response, "server_id", server->keys.server_id);
         cJSON_AddStringToObject(response, "generation", server->keys.generation);
@@ -278,13 +279,18 @@ static int api_request_inner(struct mg_connection *connection) {
     }
     if (!strcmp(request->request_method, "POST") &&
         (!strcmp(path, "/api/v1/messages") || !strcmp(path, "/api/v1/sync") || !strcmp(path, "/api/v1/accounts") || !strcmp(path, "/api/v1/saved") ||
-            !strcmp(path, "/api/v1/read") || !strcmp(path, "/api/v1/states") || !strcmp(path, "/api/v1/profiles"))) {
+            !strcmp(path, "/api/v1/read") || !strcmp(path, "/api/v1/states") || !strcmp(path, "/api/v1/profiles") || !strcmp(path, "/api/v1/messages/delete") ||
+            !strcmp(path, "/api/v1/deletions"))) {
         drop_error error;
         char recipient[DROP_ID_CAP] = {0};
         object = read_json(connection);
         if (!object) return error_json(connection, 400, DROP_E_ARGUMENT);
         if (!strcmp(path, "/api/v1/messages"))
             error = drop_message_submit(server, user_id, device_id, object, &response, recipient);
+        else if (!strcmp(path, "/api/v1/messages/delete"))
+            error = drop_message_delete(server, user_id, token, object, &response, recipient);
+        else if (!strcmp(path, "/api/v1/deletions"))
+            error = drop_deletions_read(server, user_id, object, &response);
         else if (!strcmp(path, "/api/v1/sync"))
             error = drop_sync_read(server, user_id, object, &response);
         else if (!strcmp(path, "/api/v1/saved"))

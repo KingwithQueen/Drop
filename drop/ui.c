@@ -41,12 +41,19 @@ static void move(drop_ui *ui, int id, int x, int y, int width, int height) {
 static void hint(HWND edit, const WCHAR *text) {
     SendMessageW(edit, EM_SETCUEBANNER, FALSE, (LPARAM)text);
 }
-/* 已知收件人停用或删除后禁止再排队；手动输入其他登录名仍可交由服务器核验。 */
+/* 发送对象必须是当前选中且已验证的会话身份，停用或删除后禁止排队，不能退回默认发给自己。 */
 static int recipient_available(drop_ui *ui) {
-    if (ui->history && *ui->recipient_id)
+    if (ui->history && drop_id_valid(ui->peer))
         for (int i = 0; i < ui->history->peer_count; ++i)
-            if (!strcmp(ui->recipient_id, ui->history->peers[i].id)) return ui->history->peers[i].available;
-    return 1;
+            if (!strcmp(ui->peer, ui->history->peers[i].id)) return ui->history->peers[i].available;
+    return 0;
+}
+/* 依据当前消息的发送账号及服务器能力启用删除；不比较发送设备，恢复后尚未核对的记录保持禁用。 */
+static int delete_available(drop_ui *ui) {
+    if (!ui->ready || ui->busy || !ui->history || !ui->history->deletion_supported || !*ui->selected_id) return 0;
+    for (int i = 0; i < ui->history->count; ++i)
+        if (!strcmp(ui->selected_id, ui->history->rows[i].id)) return ui->history->rows[i].deletable;
+    return 0;
 }
 /* 根据登录、任务及已知收件人状态更新按钮和菜单，凭据失效时仍允许退出账号以清除保存状态。 */
 static void enable(drop_ui *ui) {
@@ -60,10 +67,13 @@ static void enable(drop_ui *ui) {
     EnableWindow(CONTROL(ui, UI_PREVIOUS), ui->ready && !ui->busy && ui->page > 0);
     EnableWindow(CONTROL(ui, UI_NEXT), ui->ready && !ui->busy && ui->more);
     EnableWindow(CONTROL(ui, UI_EXPORT), ui->ready && !ui->busy && ui->detail && ui->detail->count > 0);
+    EnableWindow(CONTROL(ui, UI_DELETE_MESSAGE), delete_available(ui));
     EnableWindow(CONTROL(ui, UI_BODY), !ui->sending);
     EnableWindow(CONTROL(ui, UI_RECIPIENT), !ui->sending);
     EnableWindow(CONTROL(ui, UI_ATTACH), !ui->sending);
     EnableWindow(CONTROL(ui, UI_CLEAR), !ui->sending);
+    EnableWindow(CONTROL(ui, UI_REMOVE_ATTACH), !ui->sending && ui->file_count > 0);
+    EnableWindow(CONTROL(ui, UI_DRAFT_FILES), !ui->sending);
     EnableWindow(CONTROL(ui, UI_NOTIFICATIONS), !ui->busy);
     EnableWindow(CONTROL(ui, UI_TRAY_FLASH), !ui->busy);
     EnableWindow(CONTROL(ui, UI_AUTOSTART), !ui->busy);
@@ -79,13 +89,14 @@ static void enable(drop_ui *ui) {
     EnableMenuItem(GetMenu(ui->window), UI_SEND, MF_BYCOMMAND | (ui->ready && !ui->busy && recipient_available(ui) ? MF_ENABLED : MF_GRAYED));
     EnableMenuItem(GetMenu(ui->window), UI_SYNC, MF_BYCOMMAND | (ui->ready && !ui->busy ? MF_ENABLED : MF_GRAYED));
     EnableMenuItem(GetMenu(ui->window), UI_EXPORT, MF_BYCOMMAND | (ui->ready && !ui->busy && ui->detail && ui->detail->count ? MF_ENABLED : MF_GRAYED));
+    EnableMenuItem(GetMenu(ui->window), UI_DELETE_MESSAGE, MF_BYCOMMAND | (delete_available(ui) ? MF_ENABLED : MF_GRAYED));
     EnableMenuItem(GetMenu(ui->window), UI_ATTACH, MF_BYCOMMAND | (!ui->sending ? MF_ENABLED : MF_GRAYED));
     EnableMenuItem(GetMenu(ui->window), UI_RESTORE_RETRY, MF_BYCOMMAND | (IsWindowEnabled(CONTROL(ui, UI_RESTORE_RETRY)) ? MF_ENABLED : MF_GRAYED));
 }
 /* 按当前窗口尺寸安排原生控件，保持消息编辑、历史和状态区域可用。 */
 static void layout(drop_ui *ui, int width, int height) {
-    int left, right, w, files_width, parts[2];
-    drop_ui_viewport(ui, ui->window, 550, &width, &height);
+    int left, right, w, files_width, parts[2], draft = ui->file_count ? 92 : 0;
+    drop_ui_viewport(ui, ui->window, 550 + draft, &width, &height);
     if (ui->divider < 200) ui->divider = 200;
     if (ui->divider > width - 580) ui->divider = width - 580;
     left = ui->divider + 8;
@@ -97,6 +108,7 @@ static void layout(drop_ui *ui, int width, int height) {
     move(ui, UI_EXPORT, 230, 8, 116, 28);
     move(ui, UI_RESTORE_RETRY, 354, 8, 170, 28);
     move(ui, UI_RESET_FILTER, 532, 8, 94, 28);
+    move(ui, UI_DELETE_MESSAGE, 634, 8, 90, 28);
     move(ui, UI_EXIT, right - 98, 8, 98, 28);
     move(ui, UI_USER_SEARCH, 8, 46, ui->divider - 106, 26);
     move(ui, UI_ADD_USER, ui->divider - 92, 46, 84, 26);
@@ -110,26 +122,31 @@ static void layout(drop_ui *ui, int width, int height) {
     move(ui, UI_FIND, right - 182, 80, 54, 26);
     move(ui, UI_PREVIOUS, right - 122, 80, 58, 26);
     move(ui, UI_NEXT, right - 58, 80, 58, 26);
-    move(ui, UI_HISTORY, left, 112, w, height - 410);
-    move(ui, UI_DETAIL_LABEL, left, height - 292, w, 20);
-    move(ui, UI_DETAIL, left, height - 266, w - files_width - 6, 84);
-    move(ui, UI_FILES, right - files_width, height - 266, files_width, 84);
-    move(ui, UI_RECIPIENT, left, height - 174, w, 26);
+    move(ui, UI_HISTORY, left, 112, w, height - 410 - draft);
+    move(ui, UI_DETAIL_LABEL, left, height - 292 - draft, w, 20);
+    move(ui, UI_DETAIL, left, height - 266 - draft, w - files_width - 6, 84);
+    move(ui, UI_FILES, right - files_width, height - 266 - draft, files_width, 84);
+    move(ui, UI_RECIPIENT, left, height - 174 - draft, w, 26);
+    move(ui, UI_DRAFT_LABEL, left, height - 234, w, 20);
+    move(ui, UI_DRAFT_FILES, left, height - 210, w, 64);
     move(ui, UI_BODY, left, height - 140, w, 74);
     move(ui, UI_ATTACH, left, height - 58, 116, 26);
     move(ui, UI_CLEAR, left + 124, height - 58, 88, 26);
-    move(ui, UI_DRAFT_FILES, left + 220, height - 54, w - 312, 20);
+    move(ui, UI_REMOVE_ATTACH, left + 220, height - 58, 88, 26);
+    move(ui, UI_SEND_HINT, left + 316, height - 54, w - 408, 20);
     move(ui, UI_SEND, right - 84, height - 58, 84, 26);
     /* 状态栏贴住实际像素边界，避免分数 DPI 将逻辑底边向上舍入后多出一个像素。 */
     RECT client;
     GetClientRect(ui->window, &client);
-    int bottom = client.bottom > drop_ui_scale(ui->dpi, 550) ? client.bottom : drop_ui_scale(ui->dpi, 550);
+    int bottom = client.bottom > drop_ui_scale(ui->dpi, 550 + draft) ? client.bottom : drop_ui_scale(ui->dpi, 550 + draft);
     MoveWindow(CONTROL(ui, UI_STATUS), 0, bottom - drop_ui_scale(ui->dpi, 24) - ui->scroll, client.right, drop_ui_scale(ui->dpi, 24), TRUE);
     ListView_SetColumnWidth(CONTROL(ui, UI_USERS), 0, drop_ui_scale(ui->dpi, ui->divider - 72));
     ListView_SetColumnWidth(CONTROL(ui, UI_USERS), 1, drop_ui_scale(ui->dpi, 46));
     ListView_SetColumnWidth(CONTROL(ui, UI_FILES), 0, drop_ui_scale(ui->dpi, files_width - 184));
     ListView_SetColumnWidth(CONTROL(ui, UI_FILES), 1, drop_ui_scale(ui->dpi, 82));
     ListView_SetColumnWidth(CONTROL(ui, UI_FILES), 2, drop_ui_scale(ui->dpi, 76));
+    ListView_SetColumnWidth(CONTROL(ui, UI_DRAFT_FILES), 0, drop_ui_scale(ui->dpi, w - 156));
+    ListView_SetColumnWidth(CONTROL(ui, UI_DRAFT_FILES), 1, drop_ui_scale(ui->dpi, 132));
     parts[0] = drop_ui_scale(ui->dpi, width - 118);
     parts[1] = -1;
     SendMessageW(CONTROL(ui, UI_STATUS), SB_SETPARTS, 2, (LPARAM)parts);
@@ -141,6 +158,7 @@ static void menu_create(drop_ui *ui) {
     AppendMenuW(file, MF_STRING, UI_ATTACH, L"添加附件…");
     AppendMenuW(file, MF_STRING, UI_EXPORT, L"导出所选附件…");
     AppendMenuW(file, MF_STRING, UI_SEND, L"发送\tCtrl+Enter");
+    AppendMenuW(file, MF_STRING, UI_DELETE_MESSAGE, L"删除所选消息（同步所有设备）");
     AppendMenuW(file, MF_SEPARATOR, 0, NULL);
     AppendMenuW(file, MF_STRING, UI_EXIT, L"真正退出（停止同步）");
     AppendMenuW(view, MF_STRING, UI_SYNC, L"同步 / 重试\tF5");
@@ -177,7 +195,7 @@ static void create_controls(drop_ui *ui) {
     control(ui, UI_URL_LABEL, L"STATIC", L"服务器地址", SS_LEFT);
     control(ui, UI_CA_LABEL, L"STATIC", L"私有 CA 文件（可选；留空使用 Windows 信任）", SS_LEFT);
     control(ui, UI_LOGIN_LABEL, L"STATIC", L"登录账号", SS_LEFT);
-    control(ui, UI_PASSWORD_LABEL, L"STATIC", L"登录密码（不保存）", SS_LEFT);
+    control(ui, UI_PASSWORD_LABEL, L"STATIC", L"登录密码", SS_LEFT);
     control(ui, UI_URL, L"EDIT", ui->url, ES_AUTOHSCROLL | WS_TABSTOP);
     hint(CONTROL(ui, UI_URL), L"http://地址:8080（PAKE）或 https://地址:8443（TLS）");
     control(ui, UI_CA, L"EDIT", ui->ca, ES_AUTOHSCROLL | WS_TABSTOP);
@@ -185,13 +203,13 @@ static void create_controls(drop_ui *ui) {
     control(ui, UI_LOGIN, L"EDIT", ui->login, ES_AUTOHSCROLL | WS_TABSTOP);
     hint(CONTROL(ui, UI_LOGIN), L"Drop 登录名");
     control(ui, UI_PASSWORD, L"EDIT", L"", ES_PASSWORD | ES_AUTOHSCROLL | WS_TABSTOP);
-    hint(CONTROL(ui, UI_PASSWORD), L"密码（仅本次登录，不保存）");
+    hint(CONTROL(ui, UI_PASSWORD), L"密码（仅用于登录，不保存原始密码）");
     SendMessageW(CONTROL(ui, UI_LOGIN), EM_SETLIMITTEXT, 64, 0);
     SendMessageW(CONTROL(ui, UI_PASSWORD), EM_SETLIMITTEXT, 1024, 0);
     control(ui, UI_PROBE, L"BUTTON", L"测试连接", WS_TABSTOP);
     control(ui, UI_SIGNIN, L"BUTTON", L"登录", WS_TABSTOP);
     control(ui, UI_LOGOUT, L"BUTTON", L"退出账号", WS_TABSTOP);
-    control(ui, UI_CONFIG_HINT, L"STATIC", L"连接或账号的修改在下次登录时使用。\n密码仅用于本次登录，关闭配置窗口也会清除。", SS_LEFT);
+    control(ui, UI_CONFIG_HINT, L"STATIC", L"登录状态自动加密保存，下次启动恢复。\n连接或账号的修改在下次登录时使用。", SS_LEFT);
     control(ui, UI_PREFERENCES_LABEL, L"STATIC", L"通知与本机选项（修改后自动保存）", SS_LEFT);
     control(ui, UI_NOTIFICATIONS, L"BUTTON", L"Windows 通知", BS_AUTOCHECKBOX | WS_TABSTOP);
     control(ui, UI_TRAY_FLASH, L"BUTTON", L"托盘图标闪烁", BS_AUTOCHECKBOX | WS_TABSTOP);
@@ -222,6 +240,7 @@ static void create_controls(drop_ui *ui) {
     SendMessageW(CONTROL(ui, UI_USER_SEARCH), EM_SETLIMITTEXT, 64, 0);
     control(ui, UI_ADD_USER, L"BUTTON", L"查找账号", WS_TABSTOP);
     control(ui, UI_RESET_FILTER, L"BUTTON", L"清除筛选", WS_TABSTOP);
+    control(ui, UI_DELETE_MESSAGE, L"BUTTON", L"删除消息", WS_TABSTOP);
     control(ui, UI_SPLITTER, L"STATIC", L"", SS_ETCHEDVERT | SS_NOTIFY);
     SetWindowSubclass(CONTROL(ui, UI_SPLITTER), splitter_proc, 1, (DWORD_PTR)ui);
     control(ui, UI_USERS, WC_LISTVIEWW, L"用户", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_TABSTOP | WS_BORDER);
@@ -233,16 +252,22 @@ static void create_controls(drop_ui *ui) {
     column.pszText = L"未读";
     column.cx = 46;
     ListView_InsertColumn(CONTROL(ui, UI_USERS), 1, &column);
-    control(ui, UI_DRAFT_FILES, L"STATIC", L"Ctrl+Enter 发送", SS_LEFT | SS_PATHELLIPSIS);
-    control(ui, UI_RECIPIENT, L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP);
-    hint(CONTROL(ui, UI_RECIPIENT), L"收件人登录名，留空发给自己（所有已授权设备）");
-    SendMessageW(CONTROL(ui, UI_RECIPIENT), EM_SETLIMITTEXT, 64, 0);
+    control(ui, UI_DRAFT_LABEL, L"STATIC", L"待发送附件", SS_LEFT);
+    control(ui, UI_DRAFT_FILES, WC_LISTVIEWW, L"待发送附件", LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_TABSTOP | WS_BORDER);
+    ListView_SetExtendedListViewStyle(CONTROL(ui, UI_DRAFT_FILES), LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
+    column.pszText = L"待发送文件";
+    ListView_InsertColumn(CONTROL(ui, UI_DRAFT_FILES), 0, &column);
+    column.pszText = L"大小";
+    ListView_InsertColumn(CONTROL(ui, UI_DRAFT_FILES), 1, &column);
+    control(ui, UI_REMOVE_ATTACH, L"BUTTON", L"移除所选", WS_TABSTOP);
+    control(ui, UI_SEND_HINT, L"STATIC", L"Ctrl+Enter 发送", SS_LEFT);
+    control(ui, UI_RECIPIENT, L"STATIC", L"请先登录，再从左侧选择发送对象。", SS_LEFT | SS_ENDELLIPSIS);
     edit = control(ui, UI_BODY, L"EDIT", L"", ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP);
     SendMessageW(edit, EM_SETLIMITTEXT, DROP_MAX_BODY, 0);
-    hint(edit, L"正文，可同时选择多个附件；收到文件后不会自动运行");
+    hint(edit, L"输入正文；Ctrl+V 可粘贴文字或文件，附件会显示在上方");
     control(ui, UI_ATTACH, L"BUTTON", L"添加附件（0）", WS_TABSTOP);
     control(ui, UI_CLEAR, L"BUTTON", L"清除附件", WS_TABSTOP);
-    control(ui, UI_SEND, L"BUTTON", L"发送", BS_DEFPUSHBUTTON | WS_TABSTOP);
+    control(ui, UI_SEND, L"BUTTON", L"发送", BS_OWNERDRAW | WS_TABSTOP);
     control(ui, UI_SYNC, L"BUTTON", L"同步 / 重试", WS_TABSTOP);
     control(ui, UI_RESTORE_RETRY, L"BUTTON", L"重新提交待核对任务", WS_TABSTOP);
     control(ui, UI_SEARCH, L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP);
@@ -279,26 +304,18 @@ static void files_clear(drop_ui *ui) {
     for (i = 0; i < ui->file_count; ++i)
         free(ui->paths[i]);
     ui->file_count = 0;
-    SetWindowTextW(CONTROL(ui, UI_ATTACH), L"添加附件（0）");
-    SetWindowTextW(CONTROL(ui, UI_DRAFT_FILES), L"Ctrl+Enter 发送");
+    memset(ui->paths, 0, sizeof(ui->paths));
+    drop_ui_draft_refresh(ui);
 }
 /* 显示待发送文件的原始名称摘要，完整路径仍只在界面持有的附件数组中保存。 */
 static void files_summary(drop_ui *ui) {
-    WCHAR text[1200] = L"待发送：";
-    for (int i = 0; i < ui->file_count; ++i) {
-        const WCHAR *base = wcsrchr(ui->paths[i], L'\\');
-        if (i && wcscat_s(text, 1200, L"；")) break;
-        wcsncat_s(text, 1200, base ? base + 1 : ui->paths[i], _TRUNCATE);
-        if (wcslen(text) >= 1190) break;
-    }
-    SetWindowTextW(CONTROL(ui, UI_DRAFT_FILES), text);
+    drop_ui_draft_refresh(ui);
 }
 /* 通过原生多选文件框取得附件路径，检查数量和容量后交由界面持有。 */
 static void files_choose(drop_ui *ui) {
     OPENFILENAMEW dialog = {0};
     WCHAR *buffer = calloc(65536, sizeof(WCHAR)), text[64];
     const WCHAR *next;
-    int count = ui->file_count;
     if (!buffer) return;
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = ui->window;
@@ -309,23 +326,18 @@ static void files_choose(drop_ui *ui) {
     if (GetOpenFileNameW(&dialog)) {
         next = buffer + wcslen(buffer) + 1;
         if (!*next) {
-            if (count < DROP_MAX_ATTACHMENTS) ui->paths[count++] = _wcsdup(buffer);
+            (void)drop_ui_draft_add(ui, buffer);
         } else
-            while (*next && count < DROP_MAX_ATTACHMENTS) {
-                WCHAR *path = malloc(32768 * sizeof(WCHAR));
-                if (!path || !drop_path_join(buffer, next, path, 32768)) {
-                    free(path);
-                    break;
-                }
-                ui->paths[count++] = path;
+            while (*next && ui->file_count < DROP_MAX_ATTACHMENTS) {
+                WCHAR path[32768];
+                if (!drop_path_join(buffer, next, path, 32768)) break;
+                (void)drop_ui_draft_add(ui, path);
                 next += wcslen(next) + 1;
             }
-        if (count && !ui->paths[count - 1]) --count;
-        ui->file_count = count;
-        swprintf_s(text, 64, L"添加附件（%d）", count);
+        swprintf_s(text, 64, L"添加附件（%d）", ui->file_count);
         SetWindowTextW(CONTROL(ui, UI_ATTACH), text);
         files_summary(ui);
-        status(ui, count == DROP_MAX_ATTACHMENTS ? L"已选择 32 个附件；其它文件未加入。" : L"附件已选择。点击发送后先保存独立副本，再进入发送队列。");
+        status(ui, ui->file_count == DROP_MAX_ATTACHMENTS ? L"已选择 32 个附件；其它文件未加入。" : L"待发送附件已显示在输入区，点击发送后进入队列。");
     }
     free(buffer);
 }
@@ -360,24 +372,36 @@ static ui_job *new_job(ui_job_type type) {
     }
     return job;
 }
-/* 在界面锁内移交单个任务并唤醒后台线程；成功后任务归工作线程，忙碌或退出时拒绝提交。 */
+/* 普通任务使用单槽，阅读任务按界面操作顺序进入有界队列；阅读不禁用控件，成功后任务归后台所有。 */
 static int submit(drop_ui *ui, ui_job *job) {
     int ok = 0;
+    int reading = job && job->type == JOB_DETAIL;
     if (!job) {
         status(ui, L"内存不足。请重试。");
         return 0;
     }
     EnterCriticalSection(&ui->lock);
-    if (!ui->job && !ui->busy) {
-        ui->job = job;
-        ui->busy = 1;
-        ok = 1;
+    if (!ui->busy) {
+        if (job->type == JOB_DETAIL && ui->read_count < 64) {
+            if (ui->last_read)
+                ui->last_read->next = job;
+            else
+                ui->reads = job;
+            ui->last_read = job;
+            ++ui->read_count;
+            ok = 1;
+        } else if (job->type != JOB_DETAIL && !ui->job) {
+            ui->job = job;
+            ui->busy = 1;
+            ok = 1;
+        }
+        if (ok) SetEvent(ui->work_pending);
     }
     LeaveCriticalSection(&ui->lock);
     if (ok) {
-        enable(ui);
+        if (!reading) enable(ui);
         SetEvent(ui->wake);
-        status(ui, L"后台正在处理，窗口可继续操作…");
+        if (!reading) status(ui, L"后台正在处理，窗口可继续操作…");
     } else {
         drop_ui_job_free(job);
         status(ui, L"后台任务尚未完成，请稍后重试。");
@@ -499,23 +523,18 @@ static void history_request(drop_ui *ui, int page, int new_filter) {
     strcpy_s(job->peer, DROP_ID_CAP, ui->peer);
     if (submit(ui, job)) ui->page = page;
 }
-/* 收集正文、接收人和已选附件构造发送任务，稳定副本及网络操作由后台完成。 */
+/* 发送目标固定为当前已验证会话，显示标签不参与路由；稳定副本及网络操作由后台完成。 */
 static void send_message(drop_ui *ui) {
     ui_job *job = new_job(JOB_SEND);
-    char *recipient;
     int i;
     if (!job) return;
     job->body = edit_utf8(ui, UI_BODY, DROP_MAX_BODY);
-    recipient = edit_utf8(ui, UI_RECIPIENT, 64);
-    if (!job->body || !recipient || (!*job->body && !ui->file_count)) {
-        free(recipient);
+    if (!job->body || !drop_id_valid(ui->peer) || (!*job->body && !ui->file_count)) {
         drop_ui_job_free(job);
         status(ui, L"正文不能超过 1 MiB；正文与附件至少填写一项。");
         return;
     }
-    strcpy_s(job->recipient, sizeof(job->recipient), recipient);
-    strcpy_s(job->id, DROP_ID_CAP, ui->recipient_id);
-    free(recipient);
+    strcpy_s(job->id, DROP_ID_CAP, ui->peer);
     for (i = 0; i < ui->file_count; ++i) {
         job->paths[i] = _wcsdup(ui->paths[i]);
         if (!job->paths[i]) {
@@ -529,16 +548,61 @@ static void send_message(drop_ui *ui) {
     if (!submit(ui, job)) ui->sending = 0;
     enable(ui);
 }
-/* 按选中历史行请求消息正文及附件详情，携带选择信息以便结果应用到正确记录。 */
+/* 从已拥有的历史快照立即显示完整正文，后台仅持久记录阅读并同步状态；重复选择保留文字和附件选择。 */
 static void detail_request(drop_ui *ui, int index) {
     ui_job *job;
+    drop_detail *detail;
+    drop_history_row *row;
     if (!ui->history || index < 0 || index >= ui->history->count || ui->busy) return;
+    row = &ui->history->rows[index];
+    if (!strcmp(ui->selected_id, row->id) && ui->detail) {
+        drop_ui_files(ui);
+        return;
+    }
+    detail = calloc(1, sizeof(*detail));
+    if (!detail) return;
+    detail->text = _wcsdup(row->content->text);
+    if (!detail->text) {
+        free(detail);
+        return;
+    }
+    detail->count = row->content->count;
+    memcpy(detail->files, row->content->files, sizeof(detail->files));
     job = new_job(JOB_DETAIL);
+    if (!job) {
+        drop_ui_detail_free(detail);
+        return;
+    }
+    strcpy_s(job->id, sizeof(job->id), row->id);
+    job->pending = row->pending;
+    job->selection = ui->selection + 1;
+    if (!submit(ui, job)) {
+        drop_ui_detail_free(detail);
+        return;
+    }
+    ++ui->selection;
+    strcpy_s(ui->selected_id, DROP_ID_CAP, row->id);
+    drop_ui_detail_free(ui->detail);
+    ui->detail = detail;
+    SetWindowTextW(CONTROL(ui, UI_DETAIL), detail->text);
+    SetWindowTextW(CONTROL(ui, UI_DETAIL_LABEL), row->state);
+    drop_ui_files(ui);
+    enable(ui);
+}
+/* 确认框期间后台快照可能更新，因此先复制消息 ID；真正删除与归属复核均在工作线程处理。 */
+static void delete_message(drop_ui *ui) {
+    if (!delete_available(ui)) {
+        status(ui, L"只能删除当前账号发送且已与支持删除的服务器同步的消息，其他设备发送的同账号消息也可删除。");
+        return;
+    }
+    ui_job *job = new_job(JOB_DELETE);
     if (!job) return;
-    strcpy_s(job->id, sizeof(job->id), ui->history->rows[index].id);
-    job->pending = ui->history->rows[index].pending;
-    job->selection = ++ui->selection;
-    if (submit(ui, job)) strcpy_s(ui->selected_id, DROP_ID_CAP, ui->history->rows[index].id);
+    strcpy_s(job->id, DROP_ID_CAP, ui->selected_id);
+    if (MessageBoxW(ui->window, L"删除这条消息及其附件关联？\n\n删除会同步到服务器、自己的所有设备及接收方设备。已导出的文件和已有备份保留。", L"删除消息",
+            MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES)
+        (void)submit(ui, job);
+    else
+        drop_ui_job_free(job);
 }
 /* 通过显式保存框选择附件导出位置，后台完成完整校验和替换写入。 */
 static void export_file(drop_ui *ui) {
@@ -702,7 +766,7 @@ static void display_result(drop_ui *ui, ui_result *result) {
     WCHAR title[192];
     ui->ready = result->ready;
     SetWindowTextW(CONTROL(ui, UI_OVERVIEW), ui->ready ? L"本机消息 · 已登录 · 自动同步" : L"本机消息 · 请在配置中登录");
-    if (result->task_done) {
+    if (result->task_done && result->type != JOB_DETAIL) {
         ui->busy = 0;
         if (result->type == JOB_SEND) ui->sending = 0;
     }
@@ -740,18 +804,19 @@ static void display_result(drop_ui *ui, ui_result *result) {
             SetWindowTextW(CONTROL(ui, UI_FROM), L"");
             SetWindowTextW(CONTROL(ui, UI_TO), L"");
         }
-        const WCHAR *peer_name = L"全部消息";
+        const WCHAR *peer_name = L"当前会话";
         for (i = 0; i < ui->history->peer_count; ++i) {
             if (strcmp(ui->peer, ui->history->peers[i].id)) continue;
             peer_name = ui->history->peers[i].name;
-            if (result->type == JOB_CONTACT) {
-                SetWindowTextW(CONTROL(ui, UI_RECIPIENT), ui->history->peers[i].login);
-                strcpy_s(ui->recipient_id, DROP_ID_CAP, ui->peer);
-            }
+            strcpy_s(ui->recipient_id, DROP_ID_CAP, ui->peer);
+            swprintf_s(title, 192, !strcmp(ui->peer, ui->history->self) ? L"发送到：我的设备（自己） · %s" : L"发送给：%s（%s）", peer_name, ui->history->peers[i].login);
+            SetWindowTextW(CONTROL(ui, UI_RECIPIENT), title);
+            SetWindowTextW(CONTROL(ui, UI_SEND), !strcmp(ui->peer, ui->history->self) ? L"发给自己" : L"发送");
         }
-        swprintf_s(title, 192, L"%s · 第 %d 页", peer_name, ui->page + 1);
+        swprintf_s(title, 192, !strcmp(ui->peer, ui->history->self) ? L"我的设备 · %s · 第 %d 页" : L"%s · 第 %d 页", peer_name, ui->page + 1);
         SetWindowTextW(CONTROL(ui, UI_OVERVIEW), title);
-        swprintf_s(title, 96, L"未读 %d · 待发送 %d\r\n附件待完成 %d", ui->history->unread, ui->history->pending_count, ui->history->downloads);
+        swprintf_s(
+            title, 96, L"未读 %d · 待发送 %d\r\n附件待完成 %d · 待删除 %d", ui->history->unread, ui->history->pending_count, ui->history->downloads, ui->history->pending_deletes);
         SetWindowTextW(CONTROL(ui, UI_HISTORY_LABEL), title);
         if (redraw) drop_ui_messages(ui);
         drop_ui_users(ui);
@@ -762,10 +827,11 @@ static void display_result(drop_ui *ui, ui_result *result) {
     } else
         attention(ui, 0);
     if (result->detail && result->selection == ui->selection) {
+        int changed = !ui->detail || wcscmp(ui->detail->text, result->detail->text);
         drop_ui_detail_free(ui->detail);
         ui->detail = result->detail;
         result->detail = NULL;
-        SetWindowTextW(CONTROL(ui, UI_DETAIL), ui->detail->text);
+        if (changed) SetWindowTextW(CONTROL(ui, UI_DETAIL), ui->detail->text);
     }
     if (ui->history && *ui->selected_id) {
         int found = 0;
@@ -785,6 +851,7 @@ static void display_result(drop_ui *ui, ui_result *result) {
             drop_ui_detail_free(ui->detail);
             ui->detail = NULL;
             SetWindowTextW(CONTROL(ui, UI_DETAIL), L"");
+            SetWindowTextW(CONTROL(ui, UI_DETAIL_LABEL), L"所选消息与附件");
         }
     }
     drop_ui_files(ui);
@@ -808,6 +875,7 @@ static void exit_app(drop_ui *ui) {
     if (ui->tray_added) (void)tray(ui, NIM_DELETE, 0, 0);
     /* 仅退出当前 Drop 实例；持久队列和分块文件在下次启动时恢复。 */
     if (ui->worker && WaitForSingleObject(ui->worker, 3000) != WAIT_OBJECT_0) ExitProcess(0);
+    if (!drop_ui_compose_close(ui)) ExitProcess(0);
     while (PeekMessageW(&message, ui->window, DROP_UI_RESULT, DROP_UI_RESULT, PM_REMOVE))
         drop_ui_result_free((ui_result *)message.lParam);
     DestroyWindow(ui->window);
@@ -841,6 +909,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         if (!drop_ui_configuration_create(ui)) return -1;
         menu_create(ui);
         create_controls(ui);
+        drop_ui_theme(ui);
+        drop_ui_compose_create(ui);
+        drop_ui_draft_refresh(ui);
         tray_icons(ui);
         DragAcceptFiles(window, TRUE);
         (void)tray(ui, NIM_ADD, 0, 0);
@@ -863,25 +934,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         ui->dragging = 0;
         break;
     case WM_DROPFILES: {
-        HDROP files = (HDROP)wparam;
-        UINT count = DragQueryFileW(files, 0xffffffff, NULL, 0), i;
-        WCHAR text[64];
-        if (!ui->sending)
-            for (i = 0; i < count && ui->file_count < DROP_MAX_ATTACHMENTS; ++i) {
-                UINT length = DragQueryFileW(files, i, NULL, 0);
-                WCHAR *path;
-                if (!length || length >= 32768) continue;
-                path = malloc(((size_t)length + 1) * sizeof(WCHAR));
-                if (!path) break;
-                if (DragQueryFileW(files, i, path, length + 1) == length)
-                    ui->paths[ui->file_count++] = path;
-                else
-                    free(path);
-            }
-        DragFinish(files);
-        swprintf_s(text, 64, L"添加附件（%d）", ui->file_count);
-        SetWindowTextW(CONTROL(ui, UI_ATTACH), text);
-        files_summary(ui);
+        drop_ui_draft_drop(ui, (HDROP)wparam);
         return 0;
     }
     case WM_SIZE:
@@ -898,8 +951,22 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         break;
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLORBTN:
-        SetBkColor((HDC)wparam, GetSysColor(COLOR_BTNFACE));
-        return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
+    case WM_CTLCOLOREDIT:
+        return drop_ui_control_color(ui, (HDC)wparam, (HWND)lparam);
+    case WM_ERASEBKGND: {
+        RECT rect;
+        GetClientRect(window, &rect);
+        FillRect((HDC)wparam, &rect, ui->brushes[DROP_UI_BACKGROUND]);
+        return 1;
+    }
+    case WM_DRAWITEM:
+        if (drop_ui_draw_button(ui, (const DRAWITEMSTRUCT *)lparam)) return TRUE;
+        break;
+    case WM_SYSCOLORCHANGE:
+    case WM_SETTINGCHANGE:
+        drop_ui_theme(ui);
+        drop_ui_messages(ui);
+        break;
     case WM_ACTIVATE:
         if (LOWORD(wparam) != WA_INACTIVE) taskbar_stop(ui);
         break;
@@ -948,6 +1015,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
     case DROP_UI_RESULT:
         display_result(ui, (ui_result *)lparam);
         return 0;
+    case DROP_UI_DRAFT_ICONS:
+        drop_ui_draft_icons(ui, (void *)lparam);
+        return 0;
     case DROP_UI_SELECT_MESSAGE:
         if (!ui->busy) {
             ui->attachment_selection = (int)lparam;
@@ -970,11 +1040,6 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         }
         return 0;
     case WM_COMMAND:
-        if (LOWORD(wparam) == UI_RECIPIENT && HIWORD(wparam) == EN_CHANGE) {
-            ui->recipient_id[0] = 0;
-            enable(ui);
-            return 0;
-        }
         if (LOWORD(wparam) == UI_USER_SEARCH && HIWORD(wparam) == EN_CHANGE) {
             drop_ui_users(ui);
             return 0;
@@ -1027,6 +1092,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         case UI_CLEAR:
             files_clear(ui);
             break;
+        case UI_REMOVE_ATTACH:
+            drop_ui_draft_remove(ui);
+            break;
         case UI_SYNC:
             if (ui->ready && !ui->busy) (void)submit(ui, new_job(JOB_NONE));
             break;
@@ -1050,6 +1118,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         case UI_EXPORT:
             if (ui->ready && !ui->busy) export_file(ui);
             break;
+        case UI_DELETE_MESSAGE:
+            delete_message(ui);
+            break;
         case UI_NOTIFICATIONS:
         case UI_TRAY_FLASH:
         case UI_AUTOSTART:
@@ -1071,10 +1142,10 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
                 item.iItem = change->iItem;
                 if (!ListView_GetItem(CONTROL(ui, UI_USERS), &item)) return 0;
                 int index = (int)item.lParam;
-                drop_peer *peer = index == 1 ? NULL : &ui->history->peers[index == 0 ? 0 : index - 1];
-                strcpy_s(ui->peer, DROP_ID_CAP, peer ? peer->id : "");
-                SetWindowTextW(CONTROL(ui, UI_RECIPIENT), peer && strcmp(peer->id, ui->history->self) ? peer->login : L"");
-                strcpy_s(ui->recipient_id, DROP_ID_CAP, peer ? peer->id : "");
+                if (index < 0 || index >= ui->history->peer_count) return 0;
+                drop_peer *peer = &ui->history->peers[index];
+                strcpy_s(ui->peer, DROP_ID_CAP, peer->id);
+                strcpy_s(ui->recipient_id, DROP_ID_CAP, peer->id);
                 enable(ui);
                 ui->selected_id[0] = 0;
                 ++ui->selection;
@@ -1164,8 +1235,9 @@ int drop_ui_run(HINSTANCE instance, const WCHAR *root, int hidden) {
     InitCommonControlsEx(&controls);
     ui->stop = CreateEventW(NULL, TRUE, FALSE, NULL);
     ui->wake = CreateEventW(NULL, FALSE, FALSE, NULL);
+    ui->work_pending = CreateEventW(NULL, TRUE, FALSE, NULL);
     InitializeCriticalSection(&ui->lock);
-    if (!ui->stop || !ui->wake) goto initialized;
+    if (!ui->stop || !ui->wake || !ui->work_pending) goto initialized;
     ui->taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
     cls.cbSize = sizeof(cls);
     cls.hInstance = instance;
@@ -1173,7 +1245,7 @@ int drop_ui_run(HINSTANCE instance, const WCHAR *root, int hidden) {
     cls.lpszClassName = ui->class_name;
     cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
     cls.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_DROP_APP));
-    cls.hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1);
+    cls.hbrBackground = NULL;
     cls.hIconSm = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(IDI_DROP_APP), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
     if (!RegisterClassExW(&cls)) goto initialized;
     ui->window = CreateWindowExW(WS_EX_CONTROLPARENT, ui->class_name, L"Drop " DROP_VERSION_WIDE, WS_OVERLAPPEDWINDOW | WS_VSCROLL, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -1201,12 +1273,20 @@ int drop_ui_run(HINSTANCE instance, const WCHAR *root, int hidden) {
     }
     result = 0;
 initialized:
+    if (ui->stop) SetEvent(ui->stop);
+    if (!drop_ui_compose_close(ui)) ExitProcess(0);
     if (ui->network_notification) CancelMibChangeNotify2(ui->network_notification);
     if (ui->worker) CloseHandle(ui->worker);
     if (ui->stop) CloseHandle(ui->stop);
     if (ui->wake) CloseHandle(ui->wake);
+    if (ui->work_pending) CloseHandle(ui->work_pending);
     DeleteCriticalSection(&ui->lock);
     drop_ui_job_free(ui->job);
+    while (ui->reads) {
+        ui_job *next = ui->reads->next;
+        drop_ui_job_free(ui->reads);
+        ui->reads = next;
+    }
     files_clear(ui);
     drop_ui_history_free(ui->history);
     drop_ui_detail_free(ui->detail);
@@ -1214,6 +1294,7 @@ initialized:
     if (ui->configuration_font) DeleteObject(ui->configuration_font);
     if (ui->tray_blank_icon) DestroyIcon(ui->tray_blank_icon);
 done:
+    drop_ui_theme_close(ui);
     if (accelerators) DestroyAcceleratorTable(accelerators);
     if (ui->message_controls) FreeLibrary(ui->message_controls);
     if (ui->singleton) CloseHandle(ui->singleton);

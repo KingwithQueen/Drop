@@ -1,8 +1,52 @@
 # 当前验收记录
 
-更新时间：2026-10-11。以下为当前结果；后面的历史记录保留各阶段当时的状态，不代表当前未完成范围。
+更新时间：2026-10-12。以下为当前结果；后面的历史记录保留各阶段当时的状态，不代表当前未完成范围。
 
-## 1.0.1 账户与在线管理：当前结果（2026-10-11）
+## 1.0.2 按账号删除消息（2026-10-12）
+
+原生界面、独立账号及多个实际客户端验证同账号跨设备删除，接收方删除入口禁用且服务器拒绝接收方和第三方的请求；取消确认保留消息，重复删除不重复生成事件。在线双方设备移除正文、详情、未读和附件缓存，离线设备恢复登录后补齐，新设备只接收删除身份而不下载正文或附件。离线删除在真正退出及服务器重启后继续提交，发给自己的消息也适用。
+
+- 正式 x64 HTTPS 删除专项 16 项 PASS，包括旧请求重放不复活内容、晚到保存确认、安全保留原始及导出文件、被占用缓存释放后重试回收、损坏隔离副本回收、异常删除页事务回滚、目录穿越缓存名拒绝，以及超过 50 条删除的连续分页及原生客户端补齐。记录 message-deletion-x64-tls-10f7f732da9d26ccb60c8176/results.json。
+- 正式 Win32 HTTP/PAKE 删除专项 10 项 PASS，message-deletion-Win32-pake-913d208d50156cbd4ea5df25/results.json；包含按账号跨设备权限、确认取消、在线删除、被占用附件及损坏副本回收、离线重连、离线删除与真正重启，以及删除后继续发送。
+- 实际此前 schema-11 服务器与非空 schema-4 客户端升级专项 3 项 PASS，deletion-migration-x64-bfbfcedb808a17cd6981e6cb/results.json。新客户端连接旧服务器正常收发、禁用删除；服务器升级留加密快照，本机升级留完整快照，原消息身份、正文、附件和免密码恢复保留；升级后的旧消息通过原生界面在运行中的服务删除。
+- x64 Debug 完整 HTTPS/WSS 网络回归 47 项 PASS，integration-x64-Debug-中文-5f424bcd6d224fb991ee7777ef2d6762/results.json。覆盖附件续传、配额、事务回滚、非空旧客户端迁移、认证及证书边界。
+- 两架构 Release DPI 各 333 项 PASS，ui-1.0.2-x64-Release-6afb0efc24244b0cbeb5548f94b4e729/results.json、ui-1.0.2-Win32-Release-7f826174255c4d5885c3f0b92951f412/results.json。覆盖删除按钮边界、125%、150%、175% 原生字体、独立双窗口及短屏滚动；没有修改桌面缩放或移动真实多屏。
+- 两架构正式阅读与刷新各 8 项 PASS，ui-responsiveness-x64-fa8d60b0ed15f07f7fa215ff/results.json、ui-responsiveness-Win32-952fe5f07d1da46c50e620d0/results.json；完整正文、已读优先、真实 WSS 通知、20 次选择和同步不销毁或重排用户行、文字选择稳定及服务器停止后的本机导出保持可用。
+- 两架构正式登录与恢复各 6 项 PASS，production-x64-6790aac14959bdd7ac4b166e3c0a1fd7/results.json、production-Win32-a591e7afe4fe98d96ca0edbefb3aa20a/results.json；真正重启客户端及服务器后免密码同步，明确注销后保持未登录并保留本机历史。
+
+原始结果均在 build/tests，源码、十二个程序的三段可见版本和哈希、57 个项目 C/H 文件格式结果、截图、C 自测及四个独立 RAR 的实际解压记录汇总于 build/verification/message-deletion-1.0.2.json。早期隔离测试的选择等待、重新登录判断和 TLS 代理关闭问题已修正并保留失败记录；未因此放宽认证、事务或缓存路径校验。逻辑删除不宣称擦除旧备份、用户导出或数据库介质旧字节。实际跨物理电脑、物理多屏移动和长期运行仍需部署观察；没有修改实际安装、账号、服务或云数据。
+
+## 1.0.2 发送对象、附件预览与配色：历史记录（2026-10-12）
+
+本轮移除客户端的「全部消息」入口，将发送对象绑定至所选真实账户，自己会话使用明确提示；新增文件图标、原始名称与大小的待发送附件预览、文件复制粘贴及逐个移除，并统一蓝灰配色。版本仍为三段 1.0.2，服务器六个构建的二进制与前次相同，协议及数据库 schema 保持原样。
+
+- x64 Debug HTTPS/WSS 全流程 47 项 PASS，build/tests/integration-x64-Debug-中文-5ea37baf4c80402aac26a6c1610f53e4/results.json。原生发送已验证当前用户选择，对方与自己历史隔离，无「全部消息」行；分页按自己会话的实际消息数检查，登录后先等正文同步再检查下载进度。
+- 两架构原生附件专项各 8 项 PASS：x64 Release 的 ui-compose-x64-Release-bf89258bcbb6c8c3b9f52f6e，以及 Win32 Release 的 ui-compose-Win32-Release-ce1a7688a99c117dda204272，均位于 build/tests。真实文件选择和 CF_HDROP 复制粘贴显示名称、大小和数量，保留正文，去重并拒绝目录；普通文字粘贴、逐个移除、32 个附件上限、20 次快速添加/清空与过期图标防护、125%/150%/175% 图标尺寸和名称保留通过。实际 native-compose-preview.png 已查看。后续复制测试只有在可完整恢复当前剪贴板格式时才操作，默认复验改用原生文件选择器。
+- x64/Win32 Release DPI 各 328 项 PASS，分别记录 ui-1.0.2-x64-Release-b80edc988da54e738041a51b391703a2 和 ui-1.0.2-Win32-Release-74bc50149c7f407995fe403c9ab5bfa5。覆盖原生字体、RichEdit 格式、控件边界、独立配置窗口、设置持久保存与短屏操作。非整数 DPI 检查作用于隔离原生窗口，未修改桌面缩放；真实物理多屏移动继续属于现场验收范围。
+- 正式登录与恢复各 6 项 PASS：production-x64-a7ec220fa21a8cc207fbed1abf9fadbd 与 production-Win32-b6a08538ea47e37680fb34f0bfe9e84b。x64 HTTPS 与 Win32 PAKE 实际收发、程序与服务器重启后的免密码恢复、明确注销删除凭据并保留历史通过。阅读与刷新专项各 8 项 PASS：ui-responsiveness-x64-168949647ebc85aa52a25904 与 ui-responsiveness-Win32-8fa5fe5a5c2fecabd008c9ae，保持已读优先、真实 WSS 通知、文字选择和用户行稳定，以及服务器停止后的本机附件导出。
+
+本轮原始测试、实际截图、55 个项目 C/H 文件、源码与十二个程序哈希、三段版本及发布包真实解压记录集中于 build/verification/client-compose-1.0.2.json。早期失败来自旧测试假定汇总视图、登录成功即正文已同步，以及 Python OLE 剪贴板回调异常；修正测试后分项和完整网络回归通过。环境暂时无响应期间的超时及后续不能复制当前复杂剪贴板格式的拒绝记录保留，没有据此修改客户端同步逻辑。没有操作已安装客户端、实际账户、运行中的服务器服务或 Google 云数据。
+
+## 1.0.2 版本更新与存储说明：历史记录（2026-10-11）
+
+本轮仅更新版本和说明。两架构 Debug、Release、正式构建完成；十二个程序的版本查询、可见 FileVersion 和 ProductVersion 均为三段 1.0.2。Windows 固定资源及 manifest 的内部末尾零继续满足系统格式，不是显示用迭代号。53 个 C/H 文件格式检查通过；逐文件与前次 client-responsiveness-1.0.1.json 比较，只有 version.h 的产品及固定资源版本常量改变，业务源码相同。
+
+四个 x64/Win32 客户端及服务器独立 RAR 通过真实解压、文件清单 SHA-256、与正式程序的匹配、部署文档和配置脚本一致性、测试入口排除检查。原始路径、源码和二进制哈希、版本结果与归档验收集中于 build/verification/version-1.0.2.json。当前版本继续使用协议 1、服务器 schema 11、客户端 schema 4，无新迁移。
+
+附件随机 ID 的 .part/.file 缓存路径、原名导出的机制，以及服务器未提供消息删除，均按当前源码核对并写入部署说明。本轮没有更改这些行为，没有重复下方 1.0.1 的网络/交互/DPI 回归，也没有操作实际账户、运行中的服务、Google 云数据或线上网站。
+
+## 1.0.1 客户端阅读与刷新优化（2026-10-11）
+
+- 正式 x64/Win32 交互专项各 8 项 PASS。使用两个账户及三个原生客户端，阻塞接收方真实 TLS 附件块请求，检查完整正文立即显示、用户控件可用、已读先于下一块到达服务器、真实 WSS 通知发送方和同账号另一设备；随后续传并逐字节校验。外部 Windows 事件钩子确认 20 次稳定消息选择及同步没有用户行销毁或重排；状态标题和新增消息不破坏原正文的文字选择。服务器停止后，原生文件对话框仍能从保留缓存导出附件。记录 ui-responsiveness-x64-538decb74f4850203b6d80ce/results.json、ui-responsiveness-Win32-9e8185f47bb6cc9880abe10f/results.json，均位于 build/tests；实际截图 native-receipts-and-cache.png 已查看。
+- 本机专项中正文显示分别约 0.016 秒及一个采样间隔以内；受控附件块放行后，中央收到已读分别约 0.703 秒及 1.031 秒，发送方与同账号另一设备更新约 0.828 秒及 1.234 秒。此记录只证明该隔离场景的顺序与响应，不代表广域网保证；当前块未结束时中央回执仍需等待，本地阅读无需等待。
+- x64 Debug HTTPS/WSS 47 项 PASS，integration-x64-Debug-中文-d4e8a6ec7be143dca2c743becc56d56f/results.json；Win32 Release HTTP/PAKE 13 项 PASS，pake-Win32-Release-中文-2c2164d32c5fcc5b/results.json。压缩回归等待已进入本机队列的消息完成实际传输；发送后控件提前恢复可用，不再假定远端同步与按钮恢复同时完成。
+- 两架构 Release DPI 各 323 项 PASS，ui-1.0.1-x64-Release-d83166fbf09a40cd8e1e7339e6fbf215/results.json、ui-1.0.1-Win32-Release-c113dc4fdbbe47efafe46ef13fbefc46/results.json。覆盖 125%、150%、175% 原生字体与 RichEdit 格式、控件边界、独立双窗口及短屏；仅改变隔离窗口，真实物理多屏移动仍待现场验证。
+- 两架构正式登录与恢复各 6 项 PASS，production-x64-b213e0a83181fefb9ecd7be30cd0dc3e/results.json、production-Win32-583035b810494dcd7c6bc341cb982020/results.json。客户端与服务器真正重启后免密码收发；明确注销删除凭据而保留历史。
+- x64/Win32 Debug/Release 构建及原有 C 自测 PASS，两个正式构建排除测试入口，53 个项目 C/H 文件格式检查通过。十二个程序的 --version、可见文件版本及产品版本均为三段 1.0.1。服务器二进制保持原账户管理版本，协议及数据库 schema 不变。本轮无需更新或重启已部署服务器。
+
+本轮完整证据及独立发布包实际解压校验集中在 build/verification/client-responsiveness-1.0.1.json。慢附件代理的早期失败来自测试连接关闭和转发设置，修正隔离代理后复验通过；失败记录保留，未据此宣称网络长期稳定。没有操作真实账户、服务器服务或 Google 云数据。
+
+## 1.0.1 账户与在线管理：历史结果（2026-10-11）
 
 - 正式 x64 HTTPS 和 Win32 HTTP/PAKE 各 13 项 PASS：原生客户端自动补齐名称、WebSocket 改名同步、128 字节完整显示名、畸形输入无变更、停用/启用、设备撤销、密码重置、在线配额/备份/清理，以及删除后历史内容和附件原字节保留。同名新账户得到新 ID 且不能读取旧历史；真正重启客户端和服务器后免密码登录仍可用；删除自己账户后保留本机副本并禁止继续发送。记录 build/tests/account-management-x64-tls-ea3a3adcaf054ba4ee15aa8ee369a78d/results.json、build/tests/account-management-Win32-pake-c4941d3ecd69f3dc538426ac68fa194f/results.json。
 - 独立本地管理通道验收 8 项 PASS，覆盖错误密钥、错误方向、重复 JSON、失配挑战、旧请求重放、超长帧及客户端早退后的恢复。账户目录和客户端资料各 105 个已知身份的分页通过；资料 API 校验授权及 ID 范围，不提供陌生账户枚举。记录 build/tests/admin-channel-x64-d2be8d54043f9c67682494597b152b07/results.json。

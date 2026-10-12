@@ -37,6 +37,7 @@
     <ClCompile Include="database.c" />
     <ClCompile Include="server.c" />
     <ClCompile Include="messages.c" />
+    <ClCompile Include="deletions.c" />
     <ClCompile Include="objects.c" />
     <ClCompile Include="receipts.c" />
     <ClCompile Include="maintenance.c" />

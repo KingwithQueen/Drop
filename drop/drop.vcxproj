@@ -145,6 +145,7 @@
     <ClCompile Include="client.c" />
     <ClCompile Include="profiles.c" />
     <ClCompile Include="receipts.c" />
+    <ClCompile Include="deletions.c" />
     <ClCompile Include="trust.c" />
     <ClCompile Include="transfers.c" />
     <ClCompile Include="ui.c" />
@@ -153,6 +154,8 @@
     <ClCompile Include="ui_settings.c" />
     <ClCompile Include="ui_windows.c" />
     <ClCompile Include="ui_messages.c" />
+    <ClCompile Include="ui_compose.c" />
+    <ClCompile Include="ui_theme.c" />
     <ClInclude Include="ui_data.h" />
     <ClInclude Include="ui_internal.h" />
     <Manifest Include="drop.manifest" />

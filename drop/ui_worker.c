@@ -258,15 +258,30 @@ static void status_text(ui_result *result, drop_client *client) {
         swprintf_s(result->status, 256, L"%s；已保存的发送队列和下载进度保留，可重试。", error);
     else if (result->type == JOB_EXPORT)
         wcscpy_s(result->status, 256, L"附件已导出到所选位置。");
+    else if (result->delete_queued)
+        wcscpy_s(result->status, 256, L"已记录删除；将同步到服务器与所有相关设备。断网时保留删除任务。");
     else if (result->history && result->history->restore_review)
         swprintf_s(result->status, 256, L"服务器已恢复 · 本机副本保留 · %d 个发送任务待核对；核对后可明确重新提交。", result->history->restore_review);
     else if (result->history)
-        swprintf_s(result->status, 256, L"已登录 · 未读 %d · 待发送 %d · 附件待完成 %d · 本次下载 %llu 字节", result->history->unread, result->history->pending_count,
-            result->history->downloads, (unsigned long long)client->downloaded_bytes);
+        swprintf_s(result->status, 256, L"已登录 · 未读 %d · 待发送 %d · 待删除 %d · 附件待完成 %d · 本次下载 %llu 字节", result->history->unread, result->history->pending_count,
+            result->history->pending_deletes, result->history->downloads, (unsigned long long)client->downloaded_bytes);
     else
         wcscpy_s(result->status, 256, L"已登录，本机副本已保存。");
 }
-/* 独占本机同步核心，处理界面任务及定时补拉；发送失败仍拉取新正文，退出前关闭事件连接并释放任务。 */
+/* 发布已持久保存的本机快照；先显示阅读结果和状态，再推进慢传输，结果移交窗口或在投递失败时释放。 */
+static void publish_result(
+    drop_ui *ui, drop_client *client, ui_result *result, int ready, int auth_failed, int page, const char *search, int64_t from, int64_t to, const char *peer, drop_error error) {
+    if (ready && auth_failed && error == DROP_OK) error = DROP_E_AUTH;
+    result->ready = ready && !auth_failed;
+    result->error = error;
+    if (ready) {
+        result->history = drop_ui_history(client, page, search, from, to, peer);
+        if (!result->history && error == DROP_OK) result->error = DROP_E_DATABASE;
+    }
+    status_text(result, client);
+    if (!PostMessageW(ui->window, DROP_UI_RESULT, 0, (LPARAM)result)) drop_ui_result_free(result);
+}
+/* 独占同步核心；阅读先持久排队并发布快照，状态优先同步，附件在交互到达时分块让出线程。 */
 DWORD WINAPI drop_ui_worker(void *data) {
     drop_ui *ui = data;
     drop_client *client = calloc(1, sizeof(*client));
@@ -284,6 +299,8 @@ DWORD WINAPI drop_ui_worker(void *data) {
     drop_network_cancel_event(ui->stop);
     ready = drop_client_open(client, ui->root);
     if (ready) {
+        strcpy_s(peer, DROP_ID_CAP, client->user);
+        client->work_pending = ui->work_pending;
         client->sync_page_limit = 2;
         client->download_quantum = 4 * DROP_CHUNK_SIZE;
     }
@@ -295,8 +312,16 @@ DWORD WINAPI drop_ui_worker(void *data) {
         drop_error error = DROP_OK;
         if (!result) break;
         EnterCriticalSection(&ui->lock);
-        job = ui->job;
-        ui->job = NULL;
+        job = ui->reads;
+        if (job) {
+            ui->reads = job->next;
+            --ui->read_count;
+            if (!ui->reads) ui->last_read = NULL;
+        } else {
+            job = ui->job;
+            ui->job = NULL;
+        }
+        if (!ui->reads && !ui->job) ResetEvent(ui->work_pending);
         LeaveCriticalSection(&ui->lock);
         if (job) {
             result->type = job->type;
@@ -345,8 +370,9 @@ DWORD WINAPI drop_ui_worker(void *data) {
                     else if (!(ready = drop_client_open(client, ui->root)))
                         error = DROP_E_DATABASE;
                     if (ready) {
+                        client->work_pending = ui->work_pending;
                         auth_failed = 0;
-                        peer[0] = 0;
+                        strcpy_s(peer, DROP_ID_CAP, client->user);
                         page = 0;
                         search[0] = 0;
                         from = 0;
@@ -396,12 +422,15 @@ DWORD WINAPI drop_ui_worker(void *data) {
                     error = job->count ? drop_client_queue_files(client, job->body, recipient, (const WCHAR *const *)job->paths, job->count, request)
                                        : drop_client_queue(client, job->body, recipient, request);
                 result->queued = error == DROP_OK;
+            } else if (job->type == JOB_DELETE) {
+                error = drop_client_delete_queue(client, job->id);
+                result->delete_queued = error == DROP_OK;
             } else if (job->type == JOB_VIEW) {
                 page = job->page;
                 strcpy_s(search, sizeof(search), job->search);
                 from = job->from;
                 to = job->to;
-                strcpy_s(peer, DROP_ID_CAP, job->peer);
+                strcpy_s(peer, DROP_ID_CAP, *job->peer ? job->peer : client->user);
             } else if (job->type == JOB_CONTACT) {
                 char resolved[DROP_ID_CAP];
                 error = drop_ui_recipient(client, job->recipient, resolved);
@@ -424,7 +453,35 @@ DWORD WINAPI drop_ui_worker(void *data) {
                 error = drop_client_retry_review(client);
         }
         if (ready && error == DROP_OK && !auth_failed &&
-            (!job || job->type == JOB_NONE || job->type == JOB_LOGIN || job->type == JOB_SEND || job->type == JOB_DETAIL || job->type == JOB_RESTORE_RETRY)) {
+            (!job || job->type == JOB_NONE || job->type == JOB_LOGIN || job->type == JOB_SEND || job->type == JOB_DETAIL || job->type == JOB_DELETE ||
+                job->type == JOB_RESTORE_RETRY)) {
+            int reading = job && (job->type == JOB_DETAIL || job->type == JOB_DELETE);
+            /* 阅读或删除意图已经写库，立即发布本机结果；删除需要网络重试时也不阻塞窗口。 */
+            if (reading) {
+                publish_result(ui, client, result, ready, auth_failed, page, search, from, to, peer, error);
+                result = calloc(1, sizeof(*result));
+                if (!result) {
+                    drop_ui_job_free(job);
+                    break;
+                }
+            }
+            drop_error read_error = drop_client_read_receipts(client);
+            if (read_error == DROP_E_AUTH) {
+                auth_failed = 1;
+                ws_stop(ui, &ws);
+            }
+            if (reading || auth_failed) {
+                error = read_error;
+                next_sync = GetTickCount64() + 1000;
+                goto published;
+            }
+            /* 收到已读或保存状态后先更新窗口；发送队列已落盘时也允许用户继续阅读和输入。 */
+            publish_result(ui, client, result, ready, auth_failed, page, search, from, to, peer, read_error);
+            result = calloc(1, sizeof(*result));
+            if (!result) {
+                drop_ui_job_free(job);
+                break;
+            }
             drop_error send_error = drop_client_flush(client), sync_error;
             /* 即使待发送附件上传失败，也继续拉取新正文，避免发送故障阻塞接收。 */
             client->downloaded_bytes = 0;
@@ -444,23 +501,16 @@ DWORD WINAPI drop_ui_worker(void *data) {
                 wait = 60000;
             else {
                 retry = 0;
-                wait = client->more_bodies || client->more_downloads || client->more_profiles ? 1000 : client->reconcile_seconds * 1000;
+                wait = client->more_bodies || client->more_downloads || client->more_profiles || client->more_deletions ? 1000 : client->reconcile_seconds * 1000;
             }
             next_sync = GetTickCount64() + wait;
         }
-        if (ready && auth_failed && error == DROP_OK) error = DROP_E_AUTH;
-        result->ready = ready && !auth_failed;
-        result->error = error;
-        if (ready) {
-            result->history = drop_ui_history(client, page, search, from, to, peer);
-            if (!result->history && error == DROP_OK) result->error = DROP_E_DATABASE;
-        }
-        status_text(result, client);
+    published:
         drop_ui_job_free(job);
-        if (!PostMessageW(ui->window, DROP_UI_RESULT, 0, (LPARAM)result)) drop_ui_result_free(result);
+        publish_result(ui, client, result, ready, auth_failed, page, search, from, to, peer, error);
         {
             ULONGLONG now = GetTickCount64();
-            wait = ready ? (next_sync > now ? (DWORD)(next_sync - now) : 0) : 300000;
+            wait = WaitForSingleObject(ui->work_pending, 0) == WAIT_OBJECT_0 ? 0 : ready ? (next_sync > now ? (DWORD)(next_sync - now) : 0) : 300000;
         }
     }
     ws_stop(ui, &ws);

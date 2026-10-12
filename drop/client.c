@@ -197,7 +197,7 @@ int drop_client_open(drop_client *c, const WCHAR *root) {
     version = sqlite3_column_int(s, 0);
     sqlite3_finalize(s);
     s = NULL;
-    if (version < 0 || version > 4) goto done;
+    if (version < 0 || version > 5) goto done;
     if (version == 0 &&
         !sql(c->database,
             "BEGIN IMMEDIATE; CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
@@ -214,7 +214,7 @@ int drop_client_open(drop_client *c, const WCHAR *root) {
     sqlite3_finalize(s);
     s = NULL;
     if (!drop_path_join(account_dir, L"files", c->files, 32768) || !drop_private_directory(c->files) || !drop_client_files_schema(c) || !drop_client_ui_schema(c) ||
-        !drop_client_receipts_schema(c) || !drop_client_verify_files(c))
+        !drop_client_receipts_schema(c) || !drop_client_deletions_schema(c) || !drop_client_verify_files(c))
         goto done;
     if (sqlite3_prepare_v2(c->database, "SELECT value FROM meta WHERE key='generation'", -1, &s, NULL) != SQLITE_OK || sqlite3_step(s) != SQLITE_ROW ||
         !drop_id_valid((const char *)sqlite3_column_text(s, 0)))
@@ -328,15 +328,33 @@ drop_error drop_client_reconcile(drop_client *c) {
         error = DROP_E_PROTOCOL;
         goto done;
     }
+    const cJSON *deletion = cJSON_GetObjectItemCaseSensitive(info, "message_deletion");
+    if (deletion && !cJSON_IsBool(deletion)) {
+        error = DROP_E_PROTOCOL;
+        goto done;
+    }
+    c->deletion_supported = cJSON_IsTrue(deletion);
     if (!strcmp(generation, c->generation)) goto done;
     if (!sql(c->database,
-            "BEGIN IMMEDIATE; UPDATE meta SET value='0' WHERE key IN('cursor','state_cursor','saved_ack_cursor'); DELETE FROM device_states; DELETE FROM object_states; DELETE "
+            "BEGIN IMMEDIATE; UPDATE meta SET value='0' WHERE key IN('cursor','state_cursor','saved_ack_cursor','deletion_cursor'); DELETE FROM device_states; DELETE FROM "
+            "object_states; DELETE "
             "FROM account_reads; DELETE FROM pending_reads; DELETE FROM message_orders; UPDATE downloads SET saved_ack=0,state=CASE WHEN state='complete' THEN 'complete' ELSE "
             "'restore_review' END; UPDATE pending SET state='restore_review',error='restore_review' WHERE state='queued';")) {
         error = drop_client_database_error(c);
         goto rollback;
     }
     if (sqlite3_prepare_v2(c->database, "UPDATE meta SET value=?1 WHERE key='generation'", -1, &s, NULL) != SQLITE_OK) {
+        error = drop_client_database_error(c);
+        goto rollback;
+    }
+    bind(s, 1, generation);
+    if (sqlite3_step(s) != SQLITE_DONE) {
+        error = drop_client_database_error(c);
+        goto rollback;
+    }
+    sqlite3_finalize(s);
+    s = NULL;
+    if (sqlite3_prepare_v2(c->database, "UPDATE pending_deletes SET generation=?1,error=''", -1, &s, NULL) != SQLITE_OK) {
         error = drop_client_database_error(c);
         goto rollback;
     }
@@ -368,10 +386,16 @@ drop_error drop_client_flush(drop_client *c) {
     int step;
     error = drop_client_reconcile(c);
     if (error != DROP_OK) return error;
+    error = drop_client_deletions(c);
+    if (error != DROP_OK) return error;
     if (sqlite3_prepare_v2(c->database, "SELECT request_id,recipient,body,compressed,original_length FROM pending WHERE state='queued' ORDER BY rowid", -1, &s, NULL) != SQLITE_OK)
         return DROP_E_DATABASE;
     while ((step = sqlite3_step(s)) == SQLITE_ROW) {
         char request[DROP_ID_CAP], *body = NULL;
+        if (c->work_pending && WaitForSingleObject(c->work_pending, 0) == WAIT_OBJECT_0) {
+            error = DROP_E_PENDING;
+            break;
+        }
         drop_text packed;
         cJSON *input = cJSON_CreateObject(), *out = NULL;
         sqlite3_stmt *update = NULL;
@@ -428,6 +452,29 @@ static drop_error save_message(drop_client *c, const cJSON *message) {
         if (!drop_id_valid(ids[i])) return DROP_E_PROTOCOL;
     }
     if (strcmp(ids[3], c->user) && strcmp(ids[4], c->user)) return DROP_E_PROTOCOL;
+    const cJSON *deleted = cJSON_GetObjectItemCaseSensitive(message, "deleted");
+    if (deleted && !cJSON_IsBool(deleted)) return DROP_E_PROTOCOL;
+    if (cJSON_IsTrue(deleted)) {
+        const char *empty = drop_json_string(message, "body", DROP_MAX_BODY);
+        const cJSON *files = cJSON_GetObjectItemCaseSensitive(message, "attachments");
+        if (!empty || *empty || !cJSON_IsArray(files) || cJSON_GetArraySize(files)) return DROP_E_PROTOCOL;
+        return drop_client_deleted_save(c, message);
+    }
+    int known = drop_client_deleted_known(c, message);
+    if (known) {
+        if (known < 0) return DROP_E_PROTOCOL;
+        /* 恢复旧服务器快照带回已删除正文时，拥有发送账号的设备重申原删除意图，接收账号只保留本机标记。 */
+        if (!strcmp(ids[3], c->user) && c->deletion_supported) {
+            if (sqlite3_prepare_v2(c->database, "INSERT OR IGNORE INTO pending_deletes(message_id,generation) VALUES(?1,?2)", -1, &s, NULL) != SQLITE_OK)
+                return drop_client_database_error(c);
+            bind(s, 1, ids[0]);
+            bind(s, 2, c->generation);
+            error = sqlite3_step(s) == SQLITE_DONE ? DROP_OK : drop_client_database_error(c);
+            sqlite3_finalize(s);
+            return error;
+        }
+        return DROP_OK;
+    }
     if (!drop_u64_parse(drop_json_string(message, "created_at", 20), &created) || created > INT64_MAX || !(body = drop_json_string(message, "body", DROP_MAX_BODY)) ||
         !drop_text_pack(body, c->use_zstd, c->zstd_level, &packed))
         return DROP_E_PROTOCOL;
@@ -561,6 +608,11 @@ drop_error drop_client_sync(drop_client *c) {
         goto done;
     }
     c->more_bodies = more;
+    /* 已提交的正文和游标保持不变；新的交互任务先执行，下轮再推进资料及附件。 */
+    if (c->work_pending && WaitForSingleObject(c->work_pending, 0) == WAIT_OBJECT_0) {
+        error = DROP_E_PENDING;
+        goto done;
+    }
     error = drop_client_profiles(c);
     if (error != DROP_OK) goto done;
     if (more)
@@ -572,6 +624,11 @@ drop_error drop_client_sync(drop_client *c) {
             goto done;
         }
         download = drop_client_downloads(c);
+        /* 分块已落盘后立即处理交互，不继续等待保存确认及状态请求；读取意图由工作线程下一轮持久记录。 */
+        if (c->work_pending && WaitForSingleObject(c->work_pending, 0) == WAIT_OBJECT_0) {
+            error = download != DROP_OK ? download : DROP_E_PENDING;
+            goto done;
+        }
         error = drop_client_receipts(c, 1);
         if (download != DROP_OK)
             error = download;

@@ -57,7 +57,7 @@ int drop_client_receipts_schema(drop_client *c) {
     int version = -1;
     if (prepare(c->database, &s, "PRAGMA user_version") && sqlite3_step(s) == SQLITE_ROW) version = sqlite3_column_int(s, 0);
     sqlite3_finalize(s);
-    if (version == 4) return 1;
+    if (version == 4 || version == 5) return 1;
     if (version != 3 || !drop_client_snapshot(c, 3)) return 0;
     /* 重放只补充顺序元数据，保留已有正文、文件及通知去重状态。 */
     if (!sql(c->database,
@@ -344,8 +344,19 @@ static drop_error pull_states(drop_client *c) {
     }
     return more ? DROP_E_LIMIT : DROP_OK;
 }
+/* 阅读反馈单独处理，避免等待大附件上传、下载或保存确认中的文件散列。 */
+drop_error drop_client_read_receipts(drop_client *c) {
+    drop_error deleted = drop_client_deletions(c);
+    if (deleted != DROP_OK) return deleted;
+    drop_error read = send_reads(c), state;
+    if (read == DROP_E_AUTH || read == DROP_E_CONFLICT || read == DROP_E_PROTOCOL) return read;
+    state = pull_states(c);
+    return read != DROP_OK ? read : state;
+}
 /* 依次处理正文确认、可选附件确认、已读提交及状态增量，失败保留未完成步骤。 */
 drop_error drop_client_receipts(drop_client *c, int files) {
+    drop_error deleted = drop_client_deletions(c);
+    if (deleted != DROP_OK) return deleted;
     drop_error saved = acknowledge(c, files), read, state;
     if (saved == DROP_E_AUTH || saved == DROP_E_CONFLICT || saved == DROP_E_PROTOCOL) return saved;
     read = send_reads(c);

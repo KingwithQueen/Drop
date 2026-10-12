@@ -225,7 +225,10 @@ drop_error drop_message_submit(drop_server *server, const char *user, const char
         duplicate = 1;
     } else {
         for (i = 0; i < attachment_count; ++i) {
-            if (!prepare(server->database, &s, "SELECT owner,state,(SELECT count(*) FROM attachments WHERE object_id=?1),total FROM objects WHERE object_id=?1")) goto rollback;
+            if (!prepare(server->database, &s,
+                    "SELECT owner,state,(SELECT count(*) FROM attachments WHERE object_id=?1)+(SELECT count(*) FROM object_deletions WHERE object_id=?1),total FROM objects WHERE "
+                    "object_id=?1"))
+                goto rollback;
             bind(s, 1, cJSON_GetArrayItem(attachments, i)->valuestring);
             if (sqlite3_step(s) != SQLITE_ROW || strcmp((const char *)sqlite3_column_text(s, 0), user)) {
                 result = DROP_E_AUTH;
@@ -362,7 +365,8 @@ drop_error drop_sync_read(drop_server *server, const char *user, const cJSON *in
     }
     if (!prepare(server->database, &s,
             "SELECT e.seq,m.message_id,m.request_id,m.conversation_id,m.sender,m.recipient,m.device,m.created_at,"
-            "m.body,m.compressed,m.original_length,m.server_order FROM events e JOIN messages m USING(message_id) WHERE e.user_id=?1 AND e.seq>?2 ORDER BY e.seq LIMIT ?3"))
+            "m.body,m.compressed,m.original_length,m.server_order,coalesce(d.deleted_at,0) FROM events e JOIN messages m USING(message_id) LEFT JOIN message_deletions d "
+            "USING(message_id) WHERE e.user_id=?1 AND e.seq>?2 ORDER BY e.seq LIMIT ?3"))
         goto done;
     bind(s, 1, user);
     sqlite3_bind_int64(s, 2, next);
@@ -391,7 +395,8 @@ drop_error drop_sync_read(drop_server *server, const char *user, const cJSON *in
             !cJSON_AddStringToObject(message, "sender_user_id", (const char *)sqlite3_column_text(s, 4)) ||
             !cJSON_AddStringToObject(message, "recipient_user_id", (const char *)sqlite3_column_text(s, 5)) ||
             !cJSON_AddStringToObject(message, "sender_device_id", (const char *)sqlite3_column_text(s, 6)) || !add_u64(message, "created_at", sqlite3_column_int64(s, 7)) ||
-            !add_u64(message, "server_order", sqlite3_column_int64(s, 11)) || !cJSON_AddStringToObject(message, "body", body)) {
+            !add_u64(message, "server_order", sqlite3_column_int64(s, 11)) || !cJSON_AddStringToObject(message, "body", body) ||
+            (sqlite3_column_int64(s, 12) && (!cJSON_AddBoolToObject(message, "deleted", 1) || !add_u64(message, "deleted_at", sqlite3_column_int64(s, 12))))) {
             free(body);
             cJSON_Delete(event);
             result = DROP_E_IO;

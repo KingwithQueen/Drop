@@ -8,6 +8,8 @@ typedef struct drop_client {
     sqlite3 *database;
     /* 本机目录独占锁，不作为跨线程数据库锁。 */
     HANDLE lock;
+    /* 借用界面的手动复位事件；交互任务到达时在分块边界让出传输，关闭核心不释放此句柄。 */
+    HANDLE work_pending;
     WCHAR root[32768], url[2049], ca_file[32768];
     WCHAR files[32768];
     char user[DROP_ID_CAP], device[DROP_ID_CAP], server[DROP_ID_CAP], generation[DROP_ID_CAP], token[DROP_TOKEN_CAP];
@@ -20,7 +22,9 @@ typedef struct drop_client {
     /* 单次下载工作量，零值使用默认策略，防止下载长期阻塞正文同步。 */
     uint64_t download_quantum;
     /* 提示工作线程继续处理持久任务，不能据此将游标提前推进。 */
-    int more_bodies, more_downloads, more_profiles;
+    int more_bodies, more_downloads, more_profiles, more_deletions;
+    /* 由经认证服务器身份检查更新；旧服务器不广告此扩展时，消息删除入口保持不可用。 */
+    int deletion_supported;
     /* 可重建的名称缓存按账号 ID 分批刷新；进程重启从第一页重新检查，不影响消息游标。 */
     char profile_after[DROP_ID_CAP];
     /* 服务器代次变化后的本机复核标记，阻止不确定发送任务盲目重发。 */
@@ -62,10 +66,22 @@ drop_error drop_client_register_files(drop_client *client, const cJSON *message)
 int drop_client_ui_schema(drop_client *client);
 /* 升级本机保存确认、已读和顺序元数据结构；保留旧正文、附件及通知去重记录。 */
 int drop_client_receipts_schema(drop_client *client);
+/* 升级本机删除标记、离线意图和受限文件清理队列，升级前保留完整数据库快照。 */
+int drop_client_deletions_schema(drop_client *client);
+/* 按账号确认本机消息归属并持久记录删除意图，允许其他发送设备的消息，断网仍保留任务。 */
+drop_error drop_client_delete_queue(drop_client *client, const char *message);
+/* 在调用者的同步事务内保存经身份校验的删除标记，清除正文、附件任务和相应发送副本元数据。 */
+drop_error drop_client_deleted_save(drop_client *client, const cJSON *message);
+/* 检查已删除消息的重放身份；返回 1 表示应忽略正文，0 表示正常消息，-1 表示身份或数据库错误。 */
+int drop_client_deleted_known(drop_client *client, const cJSON *message);
+/* 优先重试删除意图并补拉独立删除序列；文件回收只处理已持久提交的内部缓存路径。 */
+drop_error drop_client_deletions(drop_client *client);
 /* 保存服务端消息顺序，用于已读位置和状态关联；重放不覆盖本机正文及文件状态。 */
 drop_error drop_client_message_order(drop_client *client, const cJSON *message);
 /* 依次处理正文确认、可选附件确认、已读提交及状态增量，失败保留未完成步骤。 */
 drop_error drop_client_receipts(drop_client *client, int include_files);
+/* 优先提交已读并拉取状态，不上传附件、不重新散列缓存文件；断网保留持久已读队列。 */
+drop_error drop_client_read_receipts(drop_client *client);
 /* 将消息对应的账号已读位置加入本机持久队列，网络恢复后再提交。 */
 int drop_client_read_queue(drop_client *client, const char *message);
 /* 在本机结构升级前保存对应版本的数据库快照，为失败后的手动恢复保留依据。 */

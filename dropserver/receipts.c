@@ -166,6 +166,12 @@ drop_error drop_saved_submit(drop_server *server, const char *user, const char *
         bind(s, 1, id);
         bind(s, 2, user);
         if (sqlite3_step(s) != SQLITE_ROW) {
+            /* 删除与旧保存确认交错时，已认证参与者的旧确认不重新建立附件状态，也不误报整账号凭据失效。 */
+            if (!prepare(server->database, &s, "SELECT 1 FROM object_deletions d JOIN messages m USING(message_id) WHERE d.object_id=?1 AND (m.sender=?2 OR m.recipient=?2)"))
+                goto rollback;
+            bind(s, 1, id);
+            bind(s, 2, user);
+            if (sqlite3_step(s) == SQLITE_ROW) continue;
             error = DROP_E_AUTH;
             goto rollback;
         }

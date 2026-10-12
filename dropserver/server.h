@@ -152,6 +152,12 @@ int drop_migration_test(const WCHAR *directory);
 int drop_pagination_test(drop_server *server, const char *user, const char *device);
 /* 建立或迁移消息、幂等请求和同步序列结构，保留旧版正文指纹的重试语义。 */
 int drop_text_schema(drop_server *server);
+/* 建立消息删除标记和独立增量序列，迁移前保留加密快照；旧客户端的保存及已读序列不改变。 */
+int drop_deletions_schema(drop_server *server);
+/* 按发送账号校验删除权限，在同一事务清除正文、撤销附件引用并为参与账号记录删除事件。 */
+drop_error drop_message_delete(drop_server *server, const char *user, const char *token, const cJSON *input, cJSON **output, char recipient[DROP_ID_CAP]);
+/* 分页读取当前账号的持久删除记录，包含稳定消息身份；离线设备使用独立游标补齐。 */
+drop_error drop_deletions_read(drop_server *server, const char *user, const cJSON *input, cJSON **output);
 /* 在启动独占锁下先检查点再复制加密数据库及匹配密钥，核查回退副本后才允许结构迁移。 */
 int drop_schema_snapshot(drop_server *server, int version);
 /* 建立或迁移加密对象、分块进度和消息附件关系表，保持已有上传任务可恢复。 */

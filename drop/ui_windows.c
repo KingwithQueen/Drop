@@ -49,6 +49,7 @@ void drop_ui_dpi(drop_ui *ui, HWND window, UINT dpi) {
     if (!configuration && CONTROL(ui, UI_USERS)) SendMessageW(ListView_GetHeader(CONTROL(ui, UI_USERS)), WM_SETFONT, (WPARAM)font, TRUE);
     if (!configuration && CONTROL(ui, UI_FILES)) SendMessageW(ListView_GetHeader(CONTROL(ui, UI_FILES)), WM_SETFONT, (WPARAM)font, TRUE);
     if (old) DeleteObject(old);
+    if (!configuration && CONTROL(ui, UI_DRAFT_FILES)) drop_ui_draft_refresh(ui);
     icon =
         (HICON)LoadImageW(ui->instance, MAKEINTRESOURCEW(IDI_DROP_APP), IMAGE_ICON, GetSystemMetricsForDpi(SM_CXSMICON, dpi), GetSystemMetricsForDpi(SM_CYSMICON, dpi), LR_SHARED);
     SendMessageW(window, WM_SETICON, ICON_SMALL, (LPARAM)icon);
@@ -220,8 +221,14 @@ static LRESULT CALLBACK configuration_proc(HWND window, UINT message, WPARAM wpa
         return 0;
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLORBTN:
-        SetBkColor((HDC)wparam, GetSysColor(COLOR_WINDOW));
-        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+    case WM_CTLCOLOREDIT:
+        return drop_ui_control_color(ui, (HDC)wparam, (HWND)lparam);
+    case WM_ERASEBKGND: {
+        RECT rect;
+        GetClientRect(window, &rect);
+        FillRect((HDC)wparam, &rect, ui->brushes[DROP_UI_BACKGROUND]);
+        return 1;
+    }
     case WM_DPICHANGED: {
         RECT *rect = (RECT *)lparam;
         drop_ui_dpi(ui, window, HIWORD(wparam));
@@ -261,7 +268,7 @@ int drop_ui_configuration_create(drop_ui *ui) {
     cls.lpfnWndProc = configuration_proc;
     cls.lpszClassName = name;
     cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
-    cls.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    cls.hbrBackground = NULL;
     if (!RegisterClassExW(&cls)) return 0;
     ui->configuration = CreateWindowExW(WS_EX_CONTROLPARENT, name, L"Drop " DROP_VERSION_WIDE L" · 配置", WS_OVERLAPPEDWINDOW | WS_VSCROLL, CW_USEDEFAULT, CW_USEDEFAULT,
         drop_ui_scale(ui->dpi, 560), drop_ui_scale(ui->dpi, 600), ui->window, NULL, ui->instance, ui);

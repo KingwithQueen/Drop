@@ -8,7 +8,7 @@
 #include "version.h"
 
 #define DROP_PROTOCOL_VERSION 1
-#define DROP_SCHEMA_VERSION 11
+#define DROP_SCHEMA_VERSION 12
 #define DROP_MAX_BODY (1024u * 1024u)
 #define DROP_MAX_JSON (2u * 1024u * 1024u)
 #define DROP_MAX_ATTACHMENTS 32

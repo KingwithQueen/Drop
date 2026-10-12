@@ -144,7 +144,7 @@ int drop_server_open(drop_server *server, const WCHAR *directory, int initialize
     if (!initialize && GetFileAttributesW(db_path) == INVALID_FILE_ATTRIBUTES) goto failure;
     if (!key_database(&server->database, db_path, server->keys.database_key) || !migrate(server) || !verify_identity(server) || !drop_text_schema(server) ||
         !drop_objects_schema(server) || !drop_receipts_schema(server) || !drop_maintenance_schema(server) || !drop_backup_schema(server) || !drop_finalize_schema(server) ||
-        !drop_cloud_schema(server) || !drop_pake_schema(server) || !drop_admin_schema(server))
+        !drop_cloud_schema(server) || !drop_pake_schema(server) || !drop_admin_schema(server) || !drop_deletions_schema(server))
         goto failure;
     server->stop_event = CreateEventW(NULL, TRUE, FALSE, NULL);
     server->password_slots = CreateSemaphoreW(NULL, 2, 2, NULL);
@@ -540,6 +540,7 @@ int drop_migration_test(const WCHAR *directory) {
     /* 使用相同账号和凭据结构构造合法的 schema-1 测试库；该样本没有消息，测试入口不接受生产目录。 */
     (void)drop_account_create(&server, "migration-user", "迁移账号", "migration-test-password-123");
     if (!execute(server.database,
+            "DROP TABLE deletion_events; DROP TABLE deletion_sequences; DROP TABLE object_deletions; DROP TABLE message_deletions;"
             "DROP TABLE account_pake; DROP TABLE cloud_files; DROP TABLE cloud_backups; DROP TABLE backup_jobs; DROP TABLE object_pins; DROP TABLE object_cleanup; DROP TABLE "
             "state_events; DROP TABLE state_sequences; DROP TABLE read_positions; DROP TABLE saved_objects; DROP TABLE saved_bodies; DROP TABLE attachments; DROP TABLE chunks; "
             "DROP TABLE objects; DROP TABLE events; DROP TABLE messages; DROP TABLE account_sequences; DROP TABLE conversations; ALTER TABLE accounts DROP COLUMN deleted_at; "
@@ -607,7 +608,8 @@ int drop_migration_test(const WCHAR *directory) {
         s = NULL;
         if (!execute(server.database,
                 "DROP TABLE account_pake; DROP TABLE cloud_files; DROP TABLE cloud_backups; DROP TABLE backup_jobs; DROP TABLE object_pins; DROP TABLE object_cleanup; DROP TABLE "
-                "state_events; DROP TABLE state_sequences; DROP TABLE read_positions; DROP TABLE saved_objects; DROP TABLE saved_bodies; DROP INDEX messages_server_order; ALTER "
+                "state_events; DROP TABLE state_sequences; DROP TABLE read_positions; DROP TABLE saved_objects; DROP TABLE saved_bodies; DROP TABLE deletion_events; DROP TABLE "
+                "deletion_sequences; DROP TABLE object_deletions; DROP TABLE message_deletions; DROP INDEX messages_server_order; ALTER "
                 "TABLE messages DROP COLUMN server_order; DROP TABLE attachments; DROP TABLE chunks; DROP TABLE objects; ALTER TABLE accounts DROP COLUMN deleted_at; ALTER TABLE "
                 "accounts DROP COLUMN former_login; PRAGMA user_version=2;")) {
             cJSON_Delete(input);
@@ -633,6 +635,7 @@ int drop_migration_test(const WCHAR *directory) {
         if (error != DROP_E_CONFLICT) goto done;
     }
     if (!execute(server.database,
+            "DROP TABLE deletion_events; DROP TABLE deletion_sequences; DROP TABLE object_deletions; DROP TABLE message_deletions;"
             "DROP TABLE account_pake; DROP TABLE cloud_files; DROP TABLE cloud_backups; DROP TABLE backup_jobs; DROP TABLE object_pins; DROP TABLE object_cleanup; ALTER TABLE "
             "objects DROP COLUMN last_activity; ALTER TABLE objects DROP COLUMN finalize_error; ALTER TABLE accounts DROP COLUMN deleted_at; ALTER TABLE accounts DROP COLUMN "
             "former_login; PRAGMA user_version=5;"))
@@ -654,7 +657,10 @@ int drop_migration_test(const WCHAR *directory) {
     sqlite3_finalize(s);
     s = NULL;
     /* 重建上一发行版 schema 10，验证资料迁移不改变账号、PAKE 材料及消息顺序。 */
-    if (!execute(server.database, "ALTER TABLE accounts DROP COLUMN deleted_at; ALTER TABLE accounts DROP COLUMN former_login; PRAGMA user_version=10;")) goto done;
+    if (!execute(server.database,
+            "DROP TABLE deletion_events; DROP TABLE deletion_sequences; DROP TABLE object_deletions; DROP TABLE message_deletions;"
+            "ALTER TABLE accounts DROP COLUMN deleted_at; ALTER TABLE accounts DROP COLUMN former_login; PRAGMA user_version=10;"))
+        goto done;
     drop_server_close(&server);
     if (!drop_server_open(&server, root, 0)) return 0;
     if (sqlite3_prepare_v2(server.database,

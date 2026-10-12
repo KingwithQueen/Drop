@@ -86,7 +86,7 @@ int drop_admin_schema(drop_server *server) {
     int version = -1;
     if (sqlite3_prepare_v2(server->database, "PRAGMA user_version", -1, &s, NULL) == SQLITE_OK && sqlite3_step(s) == SQLITE_ROW) version = sqlite3_column_int(s, 0);
     sqlite3_finalize(s);
-    if (version == 11) return 1;
+    if (version >= 11 && version <= DROP_SCHEMA_VERSION) return 1;
     if (version != 10 || !drop_schema_snapshot(server, 10)) return 0;
     if (sqlite3_exec(server->database,
             "BEGIN IMMEDIATE; ALTER TABLE accounts ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0; ALTER TABLE accounts ADD COLUMN former_login TEXT NOT NULL DEFAULT ''; PRAGMA "

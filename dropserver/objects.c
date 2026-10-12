@@ -70,7 +70,22 @@ static drop_error load(drop_server *server, const char *user, const char *id, in
     }
     bind(s, 1, id);
     bind(s, 2, user);
-    if (sqlite3_step(s) != SQLITE_ROW) goto done;
+    if (sqlite3_step(s) != SQLITE_ROW) {
+        /* 已删除消息的参与者收到冲突而非凭据失效；正在下载的客户端随后补拉删除记录，第三账号仍无权限。 */
+        if (attachment) {
+            sqlite3_finalize(s);
+            s = NULL;
+            if (sqlite3_prepare_v2(server->database, "SELECT 1 FROM object_deletions d JOIN messages m USING(message_id) WHERE d.object_id=?1 AND (m.sender=?2 OR m.recipient=?2)",
+                    -1, &s, NULL) != SQLITE_OK) {
+                error = DROP_E_DATABASE;
+                goto done;
+            }
+            bind(s, 1, id);
+            bind(s, 2, user);
+            if (sqlite3_step(s) == SQLITE_ROW) error = DROP_E_CONFLICT;
+        }
+        goto done;
+    }
     if (!drop_object_open(server->keys.object_master_key, sqlite3_column_blob(s, 0), (size_t)sqlite3_column_bytes(s, 0), object) || strcmp(object->id, id) ||
         object->size > MAX_FILE_SIZE) {
         error = DROP_E_CRYPTO;
