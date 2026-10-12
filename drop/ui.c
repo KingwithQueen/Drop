@@ -26,11 +26,11 @@ static void status(drop_ui *ui, const WCHAR *text) {
 /* 创建一个原生控件并登记到窗口状态，使用统一字体供后续布局和命令处理。 */
 static HWND control(drop_ui *ui, int id, const WCHAR *kind, const WCHAR *text, DWORD style) {
     int configuration = drop_ui_configuration_control(id);
-    HWND parent = configuration ? ui->configuration : ui->window;
+    HWND parent = configuration ? ui->configuration : id == UI_DETAIL ? ui->document : ui->window;
     HWND window =
         CreateWindowExW(!wcscmp(kind, L"EDIT") ? WS_EX_CLIENTEDGE : 0, kind, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, parent, (HMENU)(INT_PTR)id, ui->instance, NULL);
     if (id >= UI_URL && id < UI_COUNT) CONTROL(ui, id) = window;
-    SendMessageW(window, WM_SETFONT, (WPARAM)(configuration ? ui->configuration_font : ui->font), TRUE);
+    SendMessageW(window, WM_SETFONT, (WPARAM)(configuration ? ui->configuration_font : id == UI_DETAIL ? ui->document_font : ui->font), TRUE);
     return window;
 }
 /* 根据控件 ID 调整其位置和尺寸，供界面线程布局使用。 */
@@ -95,8 +95,11 @@ static void enable(drop_ui *ui) {
 }
 /* 按当前窗口尺寸安排原生控件，保持消息编辑、历史和状态区域可用。 */
 static void layout(drop_ui *ui, int width, int height) {
-    int left, right, w, files_width, parts[2], draft = ui->file_count ? 92 : 0;
-    drop_ui_viewport(ui, ui->window, 550 + draft, &width, &height);
+    int left, right, w, files_width, parts[2];
+#if DROP_DIAGNOSTICS
+    SetPropW(ui->window, L"DROP_TEST_LAYOUT_COUNT", (HANDLE)((UINT_PTR)GetPropW(ui->window, L"DROP_TEST_LAYOUT_COUNT") + 1));
+#endif
+    drop_ui_viewport(ui, ui->window, 550, &width, &height);
     if (ui->divider < 200) ui->divider = 200;
     if (ui->divider > width - 580) ui->divider = width - 580;
     left = ui->divider + 8;
@@ -122,14 +125,14 @@ static void layout(drop_ui *ui, int width, int height) {
     move(ui, UI_FIND, right - 182, 80, 54, 26);
     move(ui, UI_PREVIOUS, right - 122, 80, 58, 26);
     move(ui, UI_NEXT, right - 58, 80, 58, 26);
-    move(ui, UI_HISTORY, left, 112, w, height - 410 - draft);
-    move(ui, UI_DETAIL_LABEL, left, height - 292 - draft, w, 20);
-    move(ui, UI_DETAIL, left, height - 266 - draft, w - files_width - 6, 84);
-    move(ui, UI_FILES, right - files_width, height - 266 - draft, files_width, 84);
-    move(ui, UI_RECIPIENT, left, height - 174 - draft, w, 26);
-    move(ui, UI_DRAFT_LABEL, left, height - 234, w, 20);
-    move(ui, UI_DRAFT_FILES, left, height - 210, w, 64);
-    move(ui, UI_BODY, left, height - 140, w, 74);
+    move(ui, UI_HISTORY, left, 112, w, height - 440);
+    /* 草稿与所选消息附件共享固定高度；增加附件只滚动各自列表，不改变正文和历史高度。 */
+    move(ui, UI_DRAFT_LABEL, left, height - 322, w - files_width - 6, 20);
+    move(ui, UI_DETAIL_LABEL, right - files_width, height - 322, files_width, 20);
+    move(ui, UI_DRAFT_FILES, left, height - 296, w - files_width - 6, 84);
+    move(ui, UI_FILES, right - files_width, height - 296, files_width, 84);
+    move(ui, UI_RECIPIENT, left, height - 204, w, 26);
+    move(ui, UI_BODY, left, height - 170, w, 104);
     move(ui, UI_ATTACH, left, height - 58, 116, 26);
     move(ui, UI_CLEAR, left + 124, height - 58, 88, 26);
     move(ui, UI_REMOVE_ATTACH, left + 220, height - 58, 88, 26);
@@ -138,14 +141,14 @@ static void layout(drop_ui *ui, int width, int height) {
     /* 状态栏贴住实际像素边界，避免分数 DPI 将逻辑底边向上舍入后多出一个像素。 */
     RECT client;
     GetClientRect(ui->window, &client);
-    int bottom = client.bottom > drop_ui_scale(ui->dpi, 550 + draft) ? client.bottom : drop_ui_scale(ui->dpi, 550 + draft);
+    int bottom = client.bottom > drop_ui_scale(ui->dpi, 550) ? client.bottom : drop_ui_scale(ui->dpi, 550);
     MoveWindow(CONTROL(ui, UI_STATUS), 0, bottom - drop_ui_scale(ui->dpi, 24) - ui->scroll, client.right, drop_ui_scale(ui->dpi, 24), TRUE);
     ListView_SetColumnWidth(CONTROL(ui, UI_USERS), 0, drop_ui_scale(ui->dpi, ui->divider - 72));
     ListView_SetColumnWidth(CONTROL(ui, UI_USERS), 1, drop_ui_scale(ui->dpi, 46));
     ListView_SetColumnWidth(CONTROL(ui, UI_FILES), 0, drop_ui_scale(ui->dpi, files_width - 184));
     ListView_SetColumnWidth(CONTROL(ui, UI_FILES), 1, drop_ui_scale(ui->dpi, 82));
     ListView_SetColumnWidth(CONTROL(ui, UI_FILES), 2, drop_ui_scale(ui->dpi, 76));
-    ListView_SetColumnWidth(CONTROL(ui, UI_DRAFT_FILES), 0, drop_ui_scale(ui->dpi, w - 156));
+    ListView_SetColumnWidth(CONTROL(ui, UI_DRAFT_FILES), 0, drop_ui_scale(ui->dpi, w - files_width - 162));
     ListView_SetColumnWidth(CONTROL(ui, UI_DRAFT_FILES), 1, drop_ui_scale(ui->dpi, 132));
     parts[0] = drop_ui_scale(ui->dpi, width - 118);
     parts[1] = -1;
@@ -162,6 +165,7 @@ static void menu_create(drop_ui *ui) {
     AppendMenuW(file, MF_SEPARATOR, 0, NULL);
     AppendMenuW(file, MF_STRING, UI_EXIT, L"真正退出（停止同步）");
     AppendMenuW(view, MF_STRING, UI_SYNC, L"同步 / 重试\tF5");
+    AppendMenuW(view, MF_STRING, UI_VIEW_MESSAGE, L"查看所选消息完整正文");
     AppendMenuW(view, MF_STRING, UI_RESET_FILTER, L"清除筛选");
     AppendMenuW(tools, MF_STRING, UI_CONFIGURATION, L"配置与账号…");
     AppendMenuW(tools, MF_STRING, UI_RESTORE_RETRY, L"重新提交待核对任务…");
@@ -231,7 +235,7 @@ static void create_controls(drop_ui *ui) {
     control(ui, UI_SAVE_CONFIG, L"BUTTON", L"保存配置", WS_TABSTOP);
     control(ui, UI_CONFIG_CLOSE, L"BUTTON", L"返回消息", WS_TABSTOP);
     control(ui, UI_CONFIG_STATUS, L"STATIC", L"填写服务器与账号后登录。", SS_LEFT);
-    control(ui, UI_OVERVIEW, L"STATIC", L"本机消息 · 正在读取登录状态…", SS_LEFT);
+    control(ui, UI_OVERVIEW, L"STATIC", L"本机消息 · 正在读取登录状态…", SS_LEFT | SS_CENTERIMAGE | SS_ENDELLIPSIS);
     control(ui, UI_CONFIGURATION, L"BUTTON", L"配置与账号…", WS_TABSTOP);
     control(ui, UI_HISTORY_LABEL, L"STATIC", L"消息历史", SS_LEFT);
     control(ui, UI_DETAIL_LABEL, L"STATIC", L"所选消息与附件", SS_LEFT);
@@ -261,7 +265,7 @@ static void create_controls(drop_ui *ui) {
     ListView_InsertColumn(CONTROL(ui, UI_DRAFT_FILES), 1, &column);
     control(ui, UI_REMOVE_ATTACH, L"BUTTON", L"移除所选", WS_TABSTOP);
     control(ui, UI_SEND_HINT, L"STATIC", L"Ctrl+Enter 发送", SS_LEFT);
-    control(ui, UI_RECIPIENT, L"STATIC", L"请先登录，再从左侧选择发送对象。", SS_LEFT | SS_ENDELLIPSIS);
+    control(ui, UI_RECIPIENT, L"STATIC", L"请先登录，再从左侧选择发送对象。", SS_LEFT | SS_ENDELLIPSIS | SS_CENTERIMAGE);
     edit = control(ui, UI_BODY, L"EDIT", L"", ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL | WS_TABSTOP);
     SendMessageW(edit, EM_SETLIMITTEXT, DROP_MAX_BODY, 0);
     hint(edit, L"输入正文；Ctrl+V 可粘贴文字或文件，附件会显示在上方");
@@ -906,7 +910,7 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
     case WM_CREATE:
         ui->dpi = GetDpiForWindow(window);
         drop_ui_dpi(ui, window, ui->dpi);
-        if (!drop_ui_configuration_create(ui)) return -1;
+        if (!drop_ui_configuration_create(ui) || !drop_ui_document_create(ui)) return -1;
         menu_create(ui);
         create_controls(ui);
         drop_ui_theme(ui);
@@ -954,6 +958,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
     case WM_CTLCOLOREDIT:
         return drop_ui_control_color(ui, (HDC)wparam, (HWND)lparam);
     case WM_ERASEBKGND: {
+#if DROP_DIAGNOSTICS
+        SetPropW(window, L"DROP_TEST_ERASE_COUNT", (HANDLE)((UINT_PTR)GetPropW(window, L"DROP_TEST_ERASE_COUNT") + 1));
+#endif
         RECT rect;
         GetClientRect(window, &rect);
         FillRect((HDC)wparam, &rect, ui->brushes[DROP_UI_BACKGROUND]);
@@ -1118,6 +1125,9 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         case UI_EXPORT:
             if (ui->ready && !ui->busy) export_file(ui);
             break;
+        case UI_VIEW_MESSAGE:
+            drop_ui_document_show(ui);
+            break;
         case UI_DELETE_MESSAGE:
             delete_message(ui);
             break;
@@ -1248,7 +1258,7 @@ int drop_ui_run(HINSTANCE instance, const WCHAR *root, int hidden) {
     cls.hbrBackground = NULL;
     cls.hIconSm = (HICON)LoadImageW(instance, MAKEINTRESOURCEW(IDI_DROP_APP), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
     if (!RegisterClassExW(&cls)) goto initialized;
-    ui->window = CreateWindowExW(WS_EX_CONTROLPARENT, ui->class_name, L"Drop " DROP_VERSION_WIDE, WS_OVERLAPPEDWINDOW | WS_VSCROLL, CW_USEDEFAULT, CW_USEDEFAULT,
+    ui->window = CreateWindowExW(WS_EX_CONTROLPARENT, ui->class_name, L"Drop " DROP_VERSION_WIDE, WS_OVERLAPPEDWINDOW | WS_VSCROLL | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
         drop_ui_scale(ui->dpi, 980), drop_ui_scale(ui->dpi, 700), NULL, NULL, instance, ui);
     if (!ui->window) goto initialized;
     drop_ui_place(ui, ui->window, 1200, 800);
@@ -1292,6 +1302,7 @@ initialized:
     drop_ui_detail_free(ui->detail);
     if (ui->font) DeleteObject(ui->font);
     if (ui->configuration_font) DeleteObject(ui->configuration_font);
+    if (ui->document_font) DeleteObject(ui->document_font);
     if (ui->tray_blank_icon) DestroyIcon(ui->tray_blank_icon);
 done:
     drop_ui_theme_close(ui);

@@ -34,8 +34,8 @@ static BOOL CALLBACK font_child(HWND window, LPARAM font) {
 
 /* 字体按目标像素重新栅格化，控件全部切换完毕后再销毁旧字体；图标从多尺寸资源选择。 */
 void drop_ui_dpi(drop_ui *ui, HWND window, UINT dpi) {
-    int configuration = window == ui->configuration;
-    HFONT *target = configuration ? &ui->configuration_font : &ui->font, old = *target;
+    int configuration = window == ui->configuration, document = window == ui->document;
+    HFONT *target = configuration ? &ui->configuration_font : document ? &ui->document_font : &ui->font, old = *target;
     HFONT font = CreateFontW(-drop_ui_scale(dpi, configuration ? 15 : 14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Microsoft YaHei UI");
     HICON icon;
@@ -43,13 +43,15 @@ void drop_ui_dpi(drop_ui *ui, HWND window, UINT dpi) {
     *target = font;
     if (configuration)
         ui->configuration_dpi = dpi;
+    else if (document)
+        ui->document_dpi = dpi;
     else
         ui->dpi = dpi;
     EnumChildWindows(window, font_child, (LPARAM)font);
-    if (!configuration && CONTROL(ui, UI_USERS)) SendMessageW(ListView_GetHeader(CONTROL(ui, UI_USERS)), WM_SETFONT, (WPARAM)font, TRUE);
-    if (!configuration && CONTROL(ui, UI_FILES)) SendMessageW(ListView_GetHeader(CONTROL(ui, UI_FILES)), WM_SETFONT, (WPARAM)font, TRUE);
+    if (!configuration && !document && CONTROL(ui, UI_USERS)) SendMessageW(ListView_GetHeader(CONTROL(ui, UI_USERS)), WM_SETFONT, (WPARAM)font, TRUE);
+    if (!configuration && !document && CONTROL(ui, UI_FILES)) SendMessageW(ListView_GetHeader(CONTROL(ui, UI_FILES)), WM_SETFONT, (WPARAM)font, TRUE);
     if (old) DeleteObject(old);
-    if (!configuration && CONTROL(ui, UI_DRAFT_FILES)) drop_ui_draft_refresh(ui);
+    if (!configuration && !document && CONTROL(ui, UI_DRAFT_FILES)) drop_ui_draft_refresh(ui);
     icon =
         (HICON)LoadImageW(ui->instance, MAKEINTRESOURCEW(IDI_DROP_APP), IMAGE_ICON, GetSystemMetricsForDpi(SM_CXSMICON, dpi), GetSystemMetricsForDpi(SM_CYSMICON, dpi), LR_SHARED);
     SendMessageW(window, WM_SETICON, ICON_SMALL, (LPARAM)icon);
@@ -66,7 +68,13 @@ void drop_ui_move(drop_ui *ui, int id, int x, int y, int width, int height) {
     UINT dpi = configuration ? ui->configuration_dpi : ui->dpi;
     int left = drop_ui_scale(dpi, x), top = drop_ui_scale(dpi, y) - scroll;
     int right = drop_ui_scale(dpi, x + width), bottom = drop_ui_scale(dpi, y + height) - scroll;
-    MoveWindow(CONTROL(ui, id), left, top, right > left ? right - left : 1, bottom > top ? bottom - top : 1, TRUE);
+    RECT previous;
+    HWND child = CONTROL(ui, id);
+    if (GetWindowRect(child, &previous)) {
+        MapWindowPoints(NULL, GetParent(child), (POINT *)&previous, 2);
+        if (previous.left == left && previous.top == top && previous.right == right && previous.bottom == bottom) return;
+    }
+    SetWindowPos(child, NULL, left, top, right > left ? right - left : 1, bottom > top ? bottom - top : 1, SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 /* 内容不足一屏时隐藏滚动条，超出时保留逻辑内容高度并限制滚动位置。 */
@@ -92,12 +100,13 @@ void drop_ui_viewport(drop_ui *ui, HWND window, int minimum_height, int *width, 
 
 /* 滚轮、页滚动和拖动滑块共用 Windows 限制后的像素位置，再重新安排当前窗口控件。 */
 void drop_ui_scroll(drop_ui *ui, HWND window, UINT message, WPARAM wparam) {
-    int configuration = window == ui->configuration, step;
+    int configuration = window == ui->configuration, step, previous;
     int *position = configuration ? &ui->configuration_scroll : &ui->scroll;
     UINT dpi = configuration ? ui->configuration_dpi : ui->dpi;
     SCROLLINFO info = {sizeof(info), SIF_ALL, 0, 0, 0, 0, 0};
     RECT client;
-    GetScrollInfo(window, SB_VERT, &info);
+    if (!GetScrollInfo(window, SB_VERT, &info)) return;
+    previous = info.nPos;
     step = drop_ui_scale(dpi, 36);
     if (message == WM_MOUSEWHEEL)
         info.nPos -= MulDiv(GET_WHEEL_DELTA_WPARAM(wparam), step, WHEEL_DELTA);
@@ -128,9 +137,16 @@ void drop_ui_scroll(drop_ui *ui, HWND window, UINT message, WPARAM wparam) {
             return;
         }
     }
+    int maximum = info.nMax - (info.nPage ? (int)info.nPage - 1 : 0);
+    if (maximum < info.nMin) maximum = info.nMin;
+    if (info.nPos < info.nMin) info.nPos = info.nMin;
+    if (info.nPos > maximum) info.nPos = maximum;
+    if (info.nPos == previous) return;
     info.fMask = SIF_POS;
     SetScrollInfo(window, SB_VERT, &info, TRUE);
     *position = GetScrollPos(window, SB_VERT);
+    /* 无可滚动内容或已到边界时不布局、不擦除，静态提示上的滚轮不能触发整窗闪烁。 */
+    if (*position == previous) return;
     GetClientRect(window, &client);
     SendMessageW(window, WM_SIZE, SIZE_RESTORED, MAKELPARAM(client.right, client.bottom));
     InvalidateRect(window, NULL, TRUE);
@@ -145,7 +161,7 @@ static RECT work_area(HWND window) {
 
 /* 初次显示在当前屏幕工作区居中，必要时缩短客户区并由滚动布局保留底部操作。 */
 void drop_ui_place(drop_ui *ui, HWND window, int width, int height) {
-    UINT dpi = window == ui->configuration ? ui->configuration_dpi : ui->dpi;
+    UINT dpi = window == ui->configuration ? ui->configuration_dpi : window == ui->document ? ui->document_dpi : ui->dpi;
     RECT area = work_area(window), rect = {0, 0, drop_ui_scale(dpi, width), drop_ui_scale(dpi, height)};
     AdjustWindowRectExForDpi(&rect, (DWORD)GetWindowLongPtrW(window, GWL_STYLE), GetMenu(window) != NULL, (DWORD)GetWindowLongPtrW(window, GWL_EXSTYLE), dpi);
     width = rect.right - rect.left;
@@ -157,7 +173,7 @@ void drop_ui_place(drop_ui *ui, HWND window, int width, int height) {
 
 /* 最小尺寸考虑当前 DPI 和窗口边框，并受工作区限制，不强迫高缩放屏幕容纳过大的窗口。 */
 void drop_ui_minimum(drop_ui *ui, HWND window, MINMAXINFO *info, int width, int height) {
-    UINT dpi = window == ui->configuration ? ui->configuration_dpi : ui->dpi;
+    UINT dpi = window == ui->configuration ? ui->configuration_dpi : window == ui->document ? ui->document_dpi : ui->dpi;
     RECT area = work_area(window), rect = {0, 0, drop_ui_scale(dpi, width), drop_ui_scale(dpi, height)};
     AdjustWindowRectExForDpi(
         &rect, (DWORD)GetWindowLongPtrW(window, GWL_STYLE), GetMenu(window) != NULL, (DWORD)GetWindowLongPtrW(window, GWL_EXSTYLE), dpi ? dpi : USER_DEFAULT_SCREEN_DPI);
@@ -270,8 +286,8 @@ int drop_ui_configuration_create(drop_ui *ui) {
     cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
     cls.hbrBackground = NULL;
     if (!RegisterClassExW(&cls)) return 0;
-    ui->configuration = CreateWindowExW(WS_EX_CONTROLPARENT, name, L"Drop " DROP_VERSION_WIDE L" · 配置", WS_OVERLAPPEDWINDOW | WS_VSCROLL, CW_USEDEFAULT, CW_USEDEFAULT,
-        drop_ui_scale(ui->dpi, 560), drop_ui_scale(ui->dpi, 600), ui->window, NULL, ui->instance, ui);
+    ui->configuration = CreateWindowExW(WS_EX_CONTROLPARENT, name, L"Drop " DROP_VERSION_WIDE L" · 配置", WS_OVERLAPPEDWINDOW | WS_VSCROLL | WS_CLIPCHILDREN, CW_USEDEFAULT,
+        CW_USEDEFAULT, drop_ui_scale(ui->dpi, 560), drop_ui_scale(ui->dpi, 600), ui->window, NULL, ui->instance, ui);
     return ui->configuration != NULL;
 }
 
@@ -294,4 +310,75 @@ void drop_ui_configuration_show(drop_ui *ui, int show) {
     ShowWindow(ui->configuration, SW_RESTORE);
     SetForegroundWindow(ui->configuration);
     SetFocus(CONTROL(ui, *ui->url ? UI_LOGIN : UI_URL));
+}
+
+/* 正文窗口沿用本机已经加载的文字，只在用户明确查看时打开，独立缩放且不再次读取网络。 */
+static LRESULT CALLBACK document_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    drop_ui *ui = (drop_ui *)GetWindowLongPtrW(window, GWLP_USERDATA);
+    if (message == WM_NCCREATE) {
+        ui = ((CREATESTRUCTW *)lparam)->lpCreateParams;
+        ui->document = window;
+        SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)ui);
+    }
+    if (!ui) return DefWindowProcW(window, message, wparam, lparam);
+    switch (message) {
+#if DROP_DIAGNOSTICS
+    case DROP_UI_TEST_DPI:
+        drop_ui_test_dpi(window, (UINT)wparam, LOWORD(lparam), HIWORD(lparam));
+        return 0;
+#endif
+    case WM_CLOSE:
+        ShowWindow(window, SW_HIDE);
+        return 0;
+    case WM_SIZE: {
+        RECT client;
+        GetClientRect(window, &client);
+        if (CONTROL(ui, UI_DETAIL)) SetWindowPos(CONTROL(ui, UI_DETAIL), NULL, 0, 0, client.right, client.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+    case WM_DPICHANGED: {
+        RECT *rect = (RECT *)lparam;
+        drop_ui_dpi(ui, window, HIWORD(wparam));
+        SetWindowPos(window, NULL, rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        return 0;
+    }
+    case WM_GETMINMAXINFO:
+        drop_ui_minimum(ui, window, (MINMAXINFO *)lparam, 360, 200);
+        return 0;
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT:
+        return drop_ui_control_color(ui, (HDC)wparam, (HWND)lparam);
+    case WM_ERASEBKGND: {
+        RECT client;
+        GetClientRect(window, &client);
+        FillRect((HDC)wparam, &client, ui->brushes[DROP_UI_SURFACE]);
+        return 1;
+    }
+    }
+    return DefWindowProcW(window, message, wparam, lparam);
+}
+
+int drop_ui_document_create(drop_ui *ui) {
+    WCHAR name[96];
+    WNDCLASSEXW cls = {sizeof(cls)};
+    swprintf_s(name, 96, L"%s-Body", ui->class_name);
+    cls.hInstance = ui->instance;
+    cls.lpfnWndProc = document_proc;
+    cls.lpszClassName = name;
+    cls.hCursor = LoadCursorW(NULL, IDC_ARROW);
+    if (!RegisterClassExW(&cls)) return 0;
+    ui->document = CreateWindowExW(WS_EX_CONTROLPARENT, name, L"Drop " DROP_VERSION_WIDE L" · 完整正文（可选择复制）", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT,
+        CW_USEDEFAULT, drop_ui_scale(ui->dpi, 760), drop_ui_scale(ui->dpi, 500), ui->window, NULL, ui->instance, ui);
+    if (!ui->document) return 0;
+    drop_ui_dpi(ui, ui->document, GetDpiForWindow(ui->document));
+    return 1;
+}
+
+void drop_ui_document_show(drop_ui *ui) {
+    if (!*ui->selected_id || !ui->detail) return;
+    if (!IsWindowVisible(ui->document)) drop_ui_place(ui, ui->document, 760, 500);
+    ShowWindow(ui->document, SW_RESTORE);
+    SendMessageW(ui->document, WM_SIZE, SIZE_RESTORED, 0);
+    SetForegroundWindow(ui->document);
+    SetFocus(CONTROL(ui, UI_DETAIL));
 }

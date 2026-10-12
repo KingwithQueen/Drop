@@ -1,19 +1,62 @@
-.vs/
+# 本机检查、测试和界面设计稿只保留在本地，不进入源码发布。
+/tests/
+/checks/
+/scripts/[Vv]erify-*
+/scripts/[Tt]est-*
+/scripts/[Cc]heck-*
+/dropcommon/self_test.c
+/vendor/csrp/test_srp.c
+/docs/design/
+
+# 构建、下载与依赖缓存；保留依赖声明、补丁和许可证。
 build/
+/out/
+cmake-build-*/
 third_party/vcpkg/
 third_party/installed/
 third_party/installed-*/
 third_party/downloads/
-*.vcxproj.user
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+.cmake/api/
+build.ninja
+.ninja_deps
+.ninja_log
 *.pdb
 *.obj
+*.o
+*.pch
+*.ilk
+*.idb
+*.ipch
+*.tlog
 *.log
+
+# IDE、Python 与其他工具的本机缓存。
+.vs/
+*.vcxproj.user
 *.user
 __pycache__/
-
-# Local verification sources and scripts are not part of the source release.
-/tests/
-/scripts/Verify-*.ps1
-/dropcommon/self_test.c
-*.pyc
+*.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+/tmp/
+/temp/
+
+# 程序运行数据及系统生成的辅助文件。
+Data/
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+*.tmp
+*.temp
+*.bak
+*~
+
+# 不按图片后缀排除：产品 PNG/ICO、原生界面资源和 website/dist 均属于发布内容。

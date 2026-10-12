@@ -98,8 +98,8 @@ drop_error drop_client_deleted_save(drop_client *c, const cJSON *message) {
     if (sqlite3_step(s) != SQLITE_DONE) goto database_error;
     static const char *changes[] = {
         "INSERT OR IGNORE INTO cache_cleanup SELECT object_id||'.file' FROM downloads WHERE message_id=?1 UNION SELECT object_id||'.part' FROM downloads WHERE message_id=?1",
-        "INSERT OR IGNORE INTO cache_cleanup SELECT local_id||'.source' FROM pending_files WHERE request_id=?2 AND ?3=?4 UNION SELECT object_id||'.file' FROM pending_files WHERE "
-        "request_id=?2 AND ?3=?4 AND object_id IS NOT NULL AND object_id!=''",
+        ("INSERT OR IGNORE INTO cache_cleanup SELECT local_id||'.source' FROM pending_files WHERE request_id=?2 AND ?3=?4 UNION SELECT object_id||'.file' FROM pending_files WHERE "
+         "request_id=?2 AND ?3=?4 AND object_id IS NOT NULL AND object_id!=''"),
         "DELETE FROM object_states WHERE object_id IN(SELECT object_id FROM downloads WHERE message_id=?1)", "DELETE FROM downloads WHERE message_id=?1",
         "DELETE FROM pending_files WHERE request_id=?2 AND ?3=?4", "DELETE FROM pending WHERE request_id=?2 AND ?3=?4", "DELETE FROM pending_reads WHERE message_id=?1",
         "UPDATE messages SET body=X'',compressed=0,original_length=0 WHERE message_id=?1", "UPDATE ui_messages SET unread=0,notified=1 WHERE message_id=?1",

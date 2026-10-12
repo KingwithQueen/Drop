@@ -69,6 +69,10 @@ int drop_hash_file(const WCHAR *path, unsigned char hash[32], uint64_t *size) {
         total += read;
     }
     if (total != (uint64_t)length.QuadPart) goto done;
+#ifndef _WIN32
+    /* POSIX 的共享锁不能阻止不协作程序写入，另核查文件时间和长度再接受摘要。 */
+    if (!drop_posix_file_unchanged(file)) goto done;
+#endif
     crypto_hash_sha256_final(&state, hash);
     *size = total;
     ok = 1;

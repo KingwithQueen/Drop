@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+    <gresource prefix="/win/jsnowly/Drop/icons"><file alias="drop.png">Dropico.png</file></gresource>
+    <gresource prefix="/win/jsnowly/Drop"><file alias="drop-style.css">platform/drop-style.css</file></gresource>
+</gresources>

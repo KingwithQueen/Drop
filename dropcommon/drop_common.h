@@ -1,7 +1,11 @@
 #ifndef DROP_COMMON_H
 #define DROP_COMMON_H
+#ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
+#else
+#include "../platform/posix.h"
+#endif
 #include <stdint.h>
 #include <stddef.h>
 #include <cjson/cJSON.h>
@@ -14,6 +18,16 @@
 #define DROP_MAX_ATTACHMENTS 32
 #define DROP_ID_CAP 33
 #define DROP_TOKEN_CAP 65
+#ifdef _WIN32
+#define DROP_DEVICE_NAME "Drop Windows"
+#define DROP_SESSION_FILE L"session.dpapi"
+#elif defined(__APPLE__)
+#define DROP_DEVICE_NAME "Drop macOS"
+#define DROP_SESSION_FILE L"session.secret"
+#else
+#define DROP_DEVICE_NAME "Drop Linux"
+#define DROP_SESSION_FILE L"session.secret"
+#endif
 
 /* 客户端和服务器共用的错误分类；其对外文本由 drop_error_name 提供，枚举本身不直接作为协议数值。 */
 typedef enum drop_error {

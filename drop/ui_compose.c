@@ -150,9 +150,9 @@ void drop_ui_draft_refresh(drop_ui *ui) {
         SetEvent(ui->icon_event);
     } else
         free(job);
-    ShowWindow(list, ui->file_count ? SW_SHOW : SW_HIDE);
-    ShowWindow(CONTROL(ui, UI_DRAFT_LABEL), ui->file_count ? SW_SHOW : SW_HIDE);
-    SendMessageW(ui->window, WM_SIZE, 0, 0);
+    /* 固定附件槽始终可见，内容变动不重新布局；正文和历史不被草稿数量挤占。 */
+    ShowWindow(list, SW_SHOW);
+    ShowWindow(CONTROL(ui, UI_DRAFT_LABEL), SW_SHOW);
 }
 
 /* 仅移除界面中所选的待发送路径；发送已开始时禁止改变草稿，移除后重新编号预览和图标代次。 */

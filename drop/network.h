@@ -30,7 +30,9 @@ void drop_pake_client_expire(const WCHAR *url, const char *token);
 int drop_pake_client_channel(const WCHAR *url, const char *token, drop_pake_keys *keys, WCHAR header[512]);
 /* 事件连接拥有者或持有引用的副本；io 负责并发收发与关闭，秘密随副本释放清零。 */
 typedef struct drop_ws {
+#ifdef _WIN32
     HINTERNET session, connection, socket;
+#endif
     struct drop_ws_io *io;
     int encrypted;
     drop_pake_keys keys;

@@ -67,7 +67,7 @@ int drop_client_login(const WCHAR *root, const WCHAR *url, const char *login, co
     }
     body = cJSON_CreateObject();
     if (!body || !cJSON_AddStringToObject(body, "login", login) || !cJSON_AddStringToObject(body, "password", password) || !cJSON_AddStringToObject(body, "device_id", device) ||
-        !cJSON_AddStringToObject(body, "device_name", "Drop Windows"))
+        !cJSON_AddStringToObject(body, "device_name", DROP_DEVICE_NAME))
         goto done;
     if (drop_http_json_ca(url, L"POST", L"/api/v1/login", NULL, body, &response, &status, ca_file) != DROP_OK || status != 200 ||
         !drop_id_valid(drop_json_string(response, "user_id", 32)) || !drop_id_valid(drop_json_string(response, "server_id", 32)) ||
@@ -75,7 +75,7 @@ int drop_client_login(const WCHAR *root, const WCHAR *url, const char *login, co
         strcmp(device, drop_json_string(response, "device_id", 32) ? drop_json_string(response, "device_id", 32) : "") || !drop_json_string(response, "token", 64) ||
         strlen(drop_json_string(response, "token", 64)) != 64)
         goto done;
-    if (!drop_to_utf8(url, url_utf8, sizeof(url_utf8)) || !cJSON_AddStringToObject(response, "url", url_utf8) || !drop_path_join(absolute, L"session.dpapi", path, 32768))
+    if (!drop_to_utf8(url, url_utf8, sizeof(url_utf8)) || !cJSON_AddStringToObject(response, "url", url_utf8) || !drop_path_join(absolute, DROP_SESSION_FILE, path, 32768))
         goto done;
     if (ca_file && *ca_file) {
         WCHAR full_ca[32768];
@@ -128,7 +128,7 @@ int drop_client_open(drop_client *c, const WCHAR *root) {
     c->heartbeat_seconds = 30;
     c->connection_timeout_seconds = 90;
     c->reconcile_seconds = 300;
-    if (!lock_root(root, c->root, &c->lock) || !drop_path_join(c->root, L"session.dpapi", path, 32768) || !drop_secret_load(path, &bytes, &size) ||
+    if (!lock_root(root, c->root, &c->lock) || !drop_path_join(c->root, DROP_SESSION_FILE, path, 32768) || !drop_secret_load(path, &bytes, &size) ||
         !(secret = drop_json_parse((char *)bytes, size)))
         goto done;
     user = drop_json_string(secret, "user_id", 32);
@@ -220,6 +220,17 @@ int drop_client_open(drop_client *c, const WCHAR *root) {
         !drop_id_valid((const char *)sqlite3_column_text(s, 0)))
         goto done;
     strcpy_s(c->generation, sizeof(c->generation), (const char *)sqlite3_column_text(s, 0));
+    sqlite3_finalize(s);
+    s = NULL;
+    /* 保存已认证服务器的删除能力，断网重启后仍可记录离线意图；服务端始终再次核查账号权限。 */
+    if (sqlite3_prepare_v2(c->database, "SELECT value FROM meta WHERE key='deletion_supported'", -1, &s, NULL) != SQLITE_OK) goto done;
+    int capability_step = sqlite3_step(s);
+    if (capability_step == SQLITE_ROW) {
+        const char *capability = (const char *)sqlite3_column_text(s, 0);
+        if (!capability || (strcmp(capability, "0") && strcmp(capability, "1"))) goto done;
+        c->deletion_supported = !strcmp(capability, "1");
+    } else if (capability_step != SQLITE_DONE)
+        goto done;
     ok = 1;
 done:
     sqlite3_finalize(s);
@@ -334,6 +345,15 @@ drop_error drop_client_reconcile(drop_client *c) {
         goto done;
     }
     c->deletion_supported = cJSON_IsTrue(deletion);
+    /* 本机能力缓存只接受身份校验成功的 server-info，并在当前服务端不广告功能时明确撤销。 */
+    if (sqlite3_prepare_v2(c->database,
+            "INSERT INTO meta(key,value) VALUES('deletion_supported',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE meta.value!=excluded.value", -1, &s,
+            NULL) != SQLITE_OK)
+        goto capability_error;
+    bind(s, 1, c->deletion_supported ? "1" : "0");
+    if (sqlite3_step(s) != SQLITE_DONE) goto capability_error;
+    sqlite3_finalize(s);
+    s = NULL;
     if (!strcmp(generation, c->generation)) goto done;
     if (!sql(c->database,
             "BEGIN IMMEDIATE; UPDATE meta SET value='0' WHERE key IN('cursor','state_cursor','saved_ack_cursor','deletion_cursor'); DELETE FROM device_states; DELETE FROM "
@@ -368,6 +388,9 @@ drop_error drop_client_reconcile(drop_client *c) {
     goto done;
 rollback:
     sql(c->database, "ROLLBACK");
+    goto done;
+capability_error:
+    error = drop_client_database_error(c);
 done:
     sqlite3_finalize(s);
     cJSON_Delete(info);

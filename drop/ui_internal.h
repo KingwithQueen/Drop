@@ -71,6 +71,7 @@ enum {
     UI_REMOVE_ATTACH,
     UI_SEND_HINT,
     UI_DELETE_MESSAGE,
+    UI_VIEW_MESSAGE,
     UI_COUNT
 };
 enum { DROP_UI_BACKGROUND, DROP_UI_SURFACE, DROP_UI_PANEL, DROP_UI_TINT, DROP_UI_TEXT, DROP_UI_MUTED, DROP_UI_ACCENT, DROP_UI_LINE, DROP_UI_ON_ACCENT, DROP_UI_COLOR_COUNT };
@@ -132,10 +133,10 @@ typedef struct ui_ws_context {
 /* 主界面状态；控件和显示数据归界面线程，job 与 ws 的跨线程发布和取消受 lock 保护。 */
 typedef struct drop_ui {
     HINSTANCE instance;
-    HWND window, configuration, controls[UI_COUNT - UI_URL];
-    /* 两个顶层窗口分别拥有字体、DPI 和滚动位置，允许它们位于不同缩放比例的屏幕。 */
-    HFONT font, configuration_font;
-    UINT dpi, configuration_dpi;
+    HWND window, configuration, document, controls[UI_COUNT - UI_URL];
+    /* 顶层窗口分别拥有字体和 DPI，主窗口与配置窗口另有独立滚动位置，允许不同屏幕缩放。 */
+    HFONT font, configuration_font, document_font;
+    UINT dpi, configuration_dpi, document_dpi;
     int scroll, configuration_scroll;
     WCHAR root[32768], class_name[80], url[2049], ca[32768], login[65];
     HANDLE singleton, stop, wake, worker, work_pending;
@@ -208,6 +209,9 @@ void drop_ui_move(drop_ui *ui, int id, int x, int y, int width, int height);
 void drop_ui_viewport(drop_ui *ui, HWND window, int minimum_height, int *width, int *height);
 /* 响应垂直滚动或滚轮，只移动当前窗口中的控件，不滚动另一个窗口。 */
 void drop_ui_scroll(drop_ui *ui, HWND window, UINT message, WPARAM wparam);
+/* 完整正文只在明确查看时显示；窗口有独立 DPI，关闭隐藏且不影响主窗口和同步。 */
+int drop_ui_document_create(drop_ui *ui);
+void drop_ui_document_show(drop_ui *ui);
 /* 按屏幕工作区限制初始窗口与最小跟踪尺寸，避免高缩放下超出桌面。 */
 void drop_ui_place(drop_ui *ui, HWND window, int width, int height);
 void drop_ui_minimum(drop_ui *ui, HWND window, MINMAXINFO *info, int width, int height);

@@ -1,5 +1,4 @@
 BasedOnStyle: LLVM
-Language: Cpp
 IndentWidth: 4
 ContinuationIndentWidth: 4
 ColumnLimit: 180

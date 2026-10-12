@@ -97,20 +97,23 @@ static LRESULT CALLBACK message_proc(HWND window, UINT message, WPARAM wparam, L
         HMENU menu = CreatePopupMenu();
         if (menu) {
             AppendMenuW(menu, MF_STRING, 33000, L"复制所选文字");
+            AppendMenuW(menu, MF_STRING, UI_VIEW_MESSAGE, L"查看完整正文");
             AppendMenuW(menu, MF_SEPARATOR, 0, NULL);
             AppendMenuW(menu, MF_STRING | (IsWindowEnabled(CONTROL(ui, UI_DELETE_MESSAGE)) ? MF_ENABLED : MF_GRAYED), UI_DELETE_MESSAGE, L"删除此消息（同步所有设备）");
             int command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, ui->window, NULL);
             DestroyMenu(menu);
             if (command == 33000) SendMessageW(window, WM_COPY, 0, 0);
             if (command == UI_DELETE_MESSAGE) SendMessageW(ui->window, WM_COMMAND, UI_DELETE_MESSAGE, 0);
+            if (command == UI_VIEW_MESSAGE) SendMessageW(ui->window, WM_COMMAND, UI_VIEW_MESSAGE, 0);
         }
         return 0;
     }
     LRESULT result = DefSubclassProc(window, message, wparam, lparam);
     (void)subclass;
-    if (message == WM_LBUTTONUP) {
+    if (message == WM_LBUTTONUP || message == WM_LBUTTONDBLCLK) {
         POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
         select_position(ui, (LONG)SendMessageW(window, EM_CHARFROMPOS, 0, (LPARAM)&point));
+        if (message == WM_LBUTTONDBLCLK) SendMessageW(ui->window, WM_COMMAND, UI_VIEW_MESSAGE, 0);
     } else if (message == WM_KEYDOWN && ui->history && ui->history->count && (wparam == VK_HOME || wparam == VK_END)) {
         int row = wparam == VK_HOME ? ui->history->count - 1 : 0;
         select_position(ui, ui->message_start[row]);
@@ -265,6 +268,9 @@ void drop_ui_users(drop_ui *ui) {
 /* 原生报告列表显示所选消息的附件；附件名在消息中同时显示，此处负责明确选中和导出。 */
 void drop_ui_files(drop_ui *ui) {
     HWND window = CONTROL(ui, UI_FILES);
+    WCHAR heading[96];
+    swprintf_s(heading, 96, L"所选消息的附件（%d）", ui->detail ? ui->detail->count : 0);
+    SetWindowTextW(CONTROL(ui, UI_DETAIL_LABEL), heading);
     ui->rebuilding = 1;
     SendMessageW(window, WM_SETREDRAW, FALSE, 0);
     ListView_DeleteAllItems(window);

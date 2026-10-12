@@ -59,6 +59,7 @@ static WCHAR *body(sqlite3_stmt *s, int column) {
 }
 /* 将消息时间转为本机可读的日期文本，供列表展示。 */
 static void time_text(sqlite3_int64 seconds, WCHAR text[32]) {
+#ifdef _WIN32
     ULARGE_INTEGER value;
     FILETIME file;
     SYSTEMTIME utc, local;
@@ -74,6 +75,11 @@ static void time_text(sqlite3_int64 seconds, WCHAR text[32]) {
         return;
     }
     swprintf_s(text, 32, L"%04u-%02u-%02u %02u:%02u:%02u", local.wYear, local.wMonth, local.wDay, local.wHour, local.wMinute, local.wSecond);
+#else
+    time_t value = (time_t)seconds;
+    struct tm local;
+    if (seconds < 0 || (int64_t)value != seconds || !localtime_r(&value, &local) || !wcsftime(text, 32, L"%Y-%m-%d %H:%M:%S", &local)) wcscpy_s(text, 32, L"时间无效");
+#endif
 }
 /* 查询本机已知参与者，自己置顶；未知名称使用完整账号 ID，避免猜测或泄露其他账号。 */
 static int peers_load(drop_client *c, drop_history *view) {
@@ -401,10 +407,14 @@ static int export_parent_allowed(drop_client *c, const WCHAR *parent) {
     t = GetFinalPathNameByHandleW(target, canonical_target, 32768, FILE_NAME_NORMALIZED);
     if (!r || !t || r >= 32768 || t >= 32768) goto done;
     length = wcslen(canonical_root);
+#ifdef _WIN32
     while (length > 8 && canonical_root[length - 1] == L'\\')
         canonical_root[--length] = 0;
     ok =
         t < length || _wcsnicmp(canonical_root, canonical_target, length) || (canonical_root[length - 1] != L'\\' && canonical_target[length] && canonical_target[length] != L'\\');
+#else
+    ok = t < length || wcsncmp(canonical_root, canonical_target, length) || (canonical_target[length] && canonical_target[length] != L'/');
+#endif
 done:
     if (root != INVALID_HANDLE_VALUE) CloseHandle(root);
     if (target != INVALID_HANDLE_VALUE) CloseHandle(target);
@@ -427,12 +437,21 @@ drop_error drop_ui_export(drop_client *c, const drop_file_view *f, const WCHAR *
     n = GetFullPathNameW(destination, 32768, absolute, NULL);
     if (!n || n >= 32768 || !_wcsicmp(absolute, source)) return DROP_E_ARGUMENT;
     wcscpy_s(parent, 32768, absolute);
+#ifdef _WIN32
     slash = wcsrchr(parent, L'\\');
     if (!slash) return DROP_E_ARGUMENT;
     if (slash == parent + 2)
         slash[1] = 0;
     else
         *slash = 0;
+#else
+    slash = wcsrchr(parent, L'/');
+    if (!slash) return DROP_E_ARGUMENT;
+    if (slash == parent)
+        slash[1] = 0;
+    else
+        *slash = 0;
+#endif
     if (!export_parent_allowed(c, parent)) return DROP_E_ARGUMENT;
     if (!drop_hash_file(source, hash, &size) || size != f->total || sodium_memcmp(hash, expected, 32)) return DROP_E_CRYPTO;
     drop_id_new(random);

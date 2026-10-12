@@ -1,6 +1,8 @@
 /* 跨客户端与服务器共用的严格输入校验、编码转换和正文压缩工具。 */
 #include "drop_common.h"
+#ifdef _WIN32
 #include <winhttp.h>
+#endif
 #include <sodium.h>
 #include <zstd.h>
 #include <stdio.h>
@@ -27,8 +29,12 @@ const char *drop_error_name(drop_error error) {
 }
 /* 将当前 Windows 文件错误转换为项目错误，单独识别磁盘空间不足。 */
 drop_error drop_io_error(void) {
+#ifdef _WIN32
     DWORD error = GetLastError();
     return error == ERROR_DISK_FULL || error == ERROR_HANDLE_DISK_FULL || error == ERROR_DISK_QUOTA_EXCEEDED ? DROP_E_SPACE : DROP_E_IO;
+#else
+    return errno == ENOSPC || errno == EDQUOT ? DROP_E_SPACE : DROP_E_IO;
+#endif
 }
 /* 初始化 libsodium；进程使用随机数和加密接口前必须调用，失败返回 0。 */
 int drop_init(void) {
@@ -68,6 +74,7 @@ void drop_token_new(char output[DROP_TOKEN_CAP]) {
     sodium_memzero(bytes, sizeof(bytes));
 }
 /* 验证指定长度的 UTF-8 字节序列；同时拒绝内容中的 NUL，避免长度和字符串解释不一致。 */
+#ifdef _WIN32
 int drop_utf8_valid(const char *text, size_t size) {
     if (!text || size > INT_MAX || memchr(text, 0, size)) return 0;
     if (!size) return 1;
@@ -99,6 +106,7 @@ int drop_url_parse(const WCHAR *text, drop_url *url) {
     url->secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
     return 1;
 }
+#endif
 /* 递归检查 JSON 的深度、字符串及重复键，防止不同解析方式对同一请求产生歧义。 */
 static int json_valid(const cJSON *node, unsigned depth) {
     const cJSON *child, *other;

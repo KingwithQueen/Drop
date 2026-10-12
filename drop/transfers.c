@@ -91,6 +91,10 @@ static int stable_copy(drop_client *c, const WCHAR *source, const char *local, c
         copied += read;
     }
     if (copied != (uint64_t)length.QuadPart || !FlushFileBuffers(output)) goto done;
+#ifndef _WIN32
+    /* POSIX 不保证 Windows 的拒绝写入共享语义，必须检测复制期间的源文件变动。 */
+    if (!drop_posix_file_unchanged(input)) goto done;
+#endif
     CloseHandle(output);
     output = INVALID_HANDLE_VALUE;
     if (!MoveFileExW(temporary, final, MOVEFILE_WRITE_THROUGH)) goto done;

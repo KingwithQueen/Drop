@@ -49,9 +49,26 @@ static int request_read(struct mg_connection *c, void *buffer, size_t size) {
     当前认证请求->position += n;
     return (int)n;
 }
-/* 按当前请求模式发送普通或 PAKE 认证响应，绑定状态与类型；临时帧在发送后清零释放。 */
+/* 每次发送有界片段并推进实际写入长度；短写不等于完成，连接关闭或错误后不能追加另一种响应。 */
+static int response_write(struct mg_connection *connection, const unsigned char *data, size_t size) {
+    size_t position = 0;
+    while (position < size) {
+        size_t remaining = size - position, chunk = remaining > 65536 ? 65536 : remaining;
+        int written = mg_write(connection, data + position, chunk);
+        if (written <= 0 || (size_t)written > chunk) {
+#if DROP_DIAGNOSTICS
+            fprintf(stderr, "Response write failure: sent=%zu total=%zu result=%d\n", position, size, written);
+#endif
+            return 0;
+        }
+        position += (size_t)written;
+    }
+    return 1;
+}
+/* 按当前请求模式发送普通或 PAKE 认证响应，绑定状态与类型；完整写完前不能清零释放临时帧。 */
 static int send_bytes(struct mg_connection *connection, int status, int binary, const unsigned char *body, size_t size) {
     unsigned char *plain = NULL, *frame = NULL;
+    char header[512];
     DWORD length = 0;
     int result = 500;
     if (当前认证请求) {
@@ -64,16 +81,18 @@ static int send_bytes(struct mg_connection *connection, int status, int binary, 
         plain[4] = (unsigned char)binary;
         memcpy(plain + 5, body, size);
         if (drop_pake_encrypt(&当前认证请求->keys, DROP_PAKE_HTTP_RX, 当前认证请求->sequence, 当前认证请求->context, plain, size + 5, &frame, &length)) {
-            mg_printf(connection, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lu\r\nCache-Control: no-store\r\n\r\n", length);
-            if (mg_write(connection, frame, length) == (int)length) result = status;
+            int header_size =
+                sprintf_s(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: %lu\r\nCache-Control: no-store\r\n\r\n", length);
+            if (header_size > 0 && response_write(connection, (const unsigned char *)header, (size_t)header_size) && response_write(connection, frame, length)) result = status;
         }
         drop_pake_bytes_free(plain, size + 5);
         drop_pake_bytes_free(frame, length);
         return result;
     }
-    mg_printf(connection, "HTTP/1.1 %d Response\r\nContent-Type: %s\r\nContent-Length: %zu\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n", status,
-        binary ? "application/octet-stream" : "application/json; charset=utf-8", size);
-    if (mg_write(connection, body, size) == (int)size) result = status;
+    int header_size =
+        sprintf_s(header, sizeof(header), "HTTP/1.1 %d Response\r\nContent-Type: %s\r\nContent-Length: %zu\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n",
+            status, binary ? "application/octet-stream" : "application/json; charset=utf-8", size);
+    if (header_size > 0 && response_write(connection, (const unsigned char *)header, (size_t)header_size) && response_write(connection, body, size)) result = status;
     return result;
 }
 
