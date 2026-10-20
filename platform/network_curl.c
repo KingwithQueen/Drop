@@ -10,10 +10,31 @@
 static _Atomic(HANDLE) 退出事件;
 static pthread_once_t curl初始化 = PTHREAD_ONCE_INIT;
 static int curl就绪;
+static pthread_key_t HTTP缓存键;
+
+/* 缓存严格属于一个线程，不跨线程共享连接；线程退出时所有请求已完成，才释放空闲连接及 TLS 会话。 */
+static void http_cache_free(void *context) {
+    curl_share_cleanup(context);
+}
 
 /* curl 全局初始化在创建任何工作线程前发布；失败后请求保持不可用。 */
 static void curl_ready(void) {
-    curl就绪 = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK;
+    curl就绪 = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK && pthread_key_create(&HTTP缓存键, http_cache_free) == 0;
+}
+/* 请求对象仍逐次销毁以清除认证头；仅复用同一线程的连接、DNS 和 TLS 会话，不缓存正文、密码或 Cookie。
+   libcurl 负责按 origin 与 TLS 配置匹配可复用连接；WebSocket 拥有独立连接，不加入此缓存。
+   依据 https://curl.se/libcurl/c/CURLSHOPT_SHARE.html，连接缓存不能在多个并发线程之间共享。 */
+static CURLSH *http_cache(void) {
+    CURLSH *cache = pthread_getspecific(HTTP缓存键);
+    if (cache) return cache;
+    cache = curl_share_init();
+    if (!cache) return NULL;
+    if (curl_share_setopt(cache, CURLSHOPT_SHARE, CURL_LOCK_DATA_CONNECT) != CURLSHE_OK || curl_share_setopt(cache, CURLSHOPT_SHARE, CURL_LOCK_DATA_DNS) != CURLSHE_OK ||
+        curl_share_setopt(cache, CURLSHOPT_SHARE, CURL_LOCK_DATA_SSL_SESSION) != CURLSHE_OK || pthread_setspecific(HTTP缓存键, cache)) {
+        curl_share_cleanup(cache);
+        return NULL;
+    }
+    return cache;
 }
 void drop_network_cancel_event(HANDLE event) {
     atomic_store(&退出事件, event);
@@ -89,6 +110,11 @@ static CURL *request_new(const WCHAR *url, const WCHAR *path, const WCHAR *ca_fi
     if (!(request = curl_easy_init())) return NULL;
 #define OPTION(name, value)                                                                                                                                                        \
     if (curl_easy_setopt(request, name, value) != CURLE_OK) goto failed
+    if (!websocket) {
+        CURLSH *cache = http_cache();
+        if (!cache) goto failed;
+        OPTION(CURLOPT_SHARE, cache);
+    }
     OPTION(CURLOPT_URL, address);
     OPTION(CURLOPT_PROTOCOLS_STR, websocket ? "ws,wss" : "http,https");
     OPTION(CURLOPT_FOLLOWLOCATION, 0L);

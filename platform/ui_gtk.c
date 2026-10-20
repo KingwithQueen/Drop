@@ -17,14 +17,17 @@ typedef struct gtk_ui {
     drop_snapshot *snapshot;
     char peer[DROP_ID_CAP], selected[DROP_ID_CAP];
     char *paths[DROP_MAX_ATTACHMENTS];
-    int count, row, file, page, rebuilding, quitting, hidden, send_pending;
-    uint64_t pending_finished, pending_serial;
+    int count, row, file, page, rebuilding, quitting, hidden, send_pending, messages_valid;
+    uint64_t pending_finished, pending_serial, view_serial;
     int starts[DROP_HISTORY_PAGE], ends[DROP_HISTORY_PAGE], file_starts[DROP_HISTORY_PAGE][DROP_MAX_ATTACHMENTS], file_ends[DROP_HISTORY_PAGE][DROP_MAX_ATTACHMENTS];
     GDBusConnection *bus;
     guint tray_registration, watcher_subscription, poll;
     GDBusNodeInfo *tray_info;
     GVariant *tray_pixmap;
     int tray_available;
+    guint scroll_tick;
+    int scroll_frames, scroll_bottom;
+    double scroll_position;
 } gtk_ui;
 
 static char *utf8(const WCHAR *text) {
@@ -61,7 +64,15 @@ static GtkWidget *text_view(int editable) {
 }
 /* 失败仍由界面拥有任务，统一清理秘密和路径，不能把提交失败当作已保存。 */
 static int submit(gtk_ui *ui, drop_task *task) {
-    if (task && drop_runtime_submit(ui->runtime, task)) return 1;
+    int view = task && (task->kind == DROP_TASK_VIEW || task->kind == DROP_TASK_FIND || task->kind == DROP_TASK_LOGIN || task->kind == DROP_TASK_LOGOUT);
+    if (view) task->view_serial = ui->view_serial + 1;
+    if (task && drop_runtime_submit(ui->runtime, task)) {
+        if (view) {
+            ++ui->view_serial;
+            gtk_widget_set_sensitive(ui->send, FALSE);
+        }
+        return 1;
+    }
     drop_task_free(task);
     gtk_label_set_text(GTK_LABEL(ui->status), "任务队列忙，请稍后重试。");
     return 0;
@@ -75,9 +86,9 @@ static void sync_clicked(GtkButton *button, gpointer context) {
     (void)button;
     submit(context, task_new(DROP_TASK_SYNC));
 }
-static void view_request(gtk_ui *ui) {
+static int view_request(gtk_ui *ui) {
     drop_task *task = task_new(DROP_TASK_VIEW);
-    if (!task) return;
+    if (!task) return 0;
     strcpy_s(task->peer, DROP_ID_CAP, ui->peer);
     task->page = ui->page;
     task->text = strdup(gtk_editable_get_text(GTK_EDITABLE(ui->search)));
@@ -90,19 +101,19 @@ static void view_request(gtk_ui *ui) {
         if (sscanf(dates[i], "%u-%u-%u%c", &year, &month, &day, &trailing) != 3 || year < 1970 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31) {
             gtk_label_set_text(GTK_LABEL(ui->status), "日期格式：YYYY-MM-DD。");
             drop_task_free(task);
-            return;
+            return 0;
         }
         GDateTime *date = g_date_time_new_local((int)year, (int)month, (int)day, i ? 23 : 0, i ? 59 : 0, i ? 59 : 0);
         if (!date) {
             drop_task_free(task);
-            return;
+            return 0;
         }
         times[i] = g_date_time_to_unix(date);
         g_date_time_unref(date);
     }
     task->from = times[0];
     task->to = times[1];
-    submit(ui, task);
+    return submit(ui, task);
 }
 static void filter_clicked(GtkButton *button, gpointer context) {
     (void)button;
@@ -131,15 +142,42 @@ static void find_clicked(GtkButton *button, gpointer context) {
     if (task) task->login = strdup(gtk_editable_get_text(GTK_EDITABLE(ui->find)));
     submit(ui, task);
 }
+static void render_peers(gtk_ui *ui);
+/* 点击立即保留目标及选中行；旧快照不得把选择退回，视图加载完成前不能向旧会话发送或操作附件。 */
 static void peer_selected(GtkListBox *box, GtkListBoxRow *row, gpointer context) {
     (void)box;
     gtk_ui *ui = context;
     const char *id = row ? g_object_get_data(G_OBJECT(row), "drop-peer") : NULL;
-    if (ui->rebuilding || !id) return;
+    if (ui->rebuilding || !id || !strcmp(id, ui->peer)) return;
+    char previous[DROP_ID_CAP];
+    strcpy_s(previous, DROP_ID_CAP, ui->peer);
+    int previous_page = ui->page;
     strcpy_s(ui->peer, DROP_ID_CAP, id);
     ui->page = 0;
-    gtk_widget_set_sensitive(ui->send, FALSE);
-    view_request(ui);
+    if (!view_request(ui)) {
+        strcpy_s(ui->peer, DROP_ID_CAP, previous);
+        ui->page = previous_page;
+        ui->rebuilding = 1;
+        render_peers(ui);
+        ui->rebuilding = 0;
+        return;
+    }
+    ui->selected[0] = 0;
+    ui->messages_valid = 0;
+    if (ui->scroll_tick) {
+        gtk_widget_remove_tick_callback(ui->messages, ui->scroll_tick);
+        ui->scroll_tick = 0;
+    }
+    ui->row = ui->file = -1;
+    gtk_widget_set_sensitive(ui->delete_button, FALSE);
+    gtk_widget_set_sensitive(ui->export_button, FALSE);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(ui->messages)), "", -1);
+    gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(ui->detail)), "", -1);
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(ui->files)))
+        gtk_list_box_remove(GTK_LIST_BOX(ui->files), child);
+    render_peers(ui);
+    gtk_label_set_text(GTK_LABEL(ui->status), "正在加载会话…");
 }
 /* 文件预览使用平台文件图标与名称，每个按钮仅删除草稿项，不操作用户原文件。 */
 static void preview_update(gtk_ui *ui);
@@ -342,7 +380,8 @@ static void message_clicked(GtkGestureClick *gesture, int count, double x, doubl
     GtkTextIter iter;
     int bx, by;
     gtk_text_view_window_to_buffer_coords(GTK_TEXT_VIEW(ui->messages), GTK_TEXT_WINDOW_WIDGET, (int)x, (int)y, &bx, &by);
-    if (!gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(ui->messages), &iter, bx, by) || !ui->snapshot || !ui->snapshot->history) return;
+    if (!gtk_text_view_get_iter_at_location(GTK_TEXT_VIEW(ui->messages), &iter, bx, by) || !ui->snapshot || !ui->snapshot->history || ui->snapshot->view_serial != ui->view_serial)
+        return;
     int offset = gtk_text_iter_get_offset(&iter);
     for (int i = 0; i < ui->snapshot->history->count; ++i) {
         if (offset < ui->starts[i] || offset >= ui->ends[i]) continue;
@@ -653,48 +692,106 @@ static void tray_start(gtk_ui *ui) {
         g_dbus_connection_call(ui->bus, "org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher", "RegisterStatusNotifierItem",
             g_variant_new("(s)", "/StatusNotifierItem"), NULL, G_DBUS_CALL_FLAGS_NONE, 5000, NULL, tray_registered, ui);
 }
-/* 连续文本流与 Windows 采用相同行结构；重绘保留所选消息 ID，并从新快照重建安全的附件范围。 */
-static void render(gtk_ui *ui) {
+/* 账号行按稳定 ID 复用；未变化的行和选中状态不触碰，避免后台刷新打断按下、释放及键盘选择。 */
+static void render_peers(gtk_ui *ui) {
+    drop_history *history = ui->snapshot->history;
+    GtkListBoxRow *selected = NULL;
+    for (int i = 0; history && i < history->peer_count; ++i) {
+        drop_peer *peer = &history->peers[i];
+        GtkWidget *row = gtk_widget_get_first_child(ui->users);
+        while (row) {
+            const char *id = g_object_get_data(G_OBJECT(row), "drop-peer");
+            if (id && !strcmp(id, peer->id)) break;
+            row = gtk_widget_get_next_sibling(row);
+        }
+        if (!row) {
+            row = gtk_list_box_row_new();
+            gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), label(""));
+            g_object_set_data_full(G_OBJECT(row), "drop-peer", g_strdup(peer->id), g_free);
+            gtk_list_box_insert(GTK_LIST_BOX(ui->users), row, i);
+        } else if (gtk_list_box_row_get_index(GTK_LIST_BOX_ROW(row)) != i) {
+            g_object_ref(row);
+            gtk_list_box_remove(GTK_LIST_BOX(ui->users), row);
+            gtk_list_box_insert(GTK_LIST_BOX(ui->users), row, i);
+            g_object_unref(row);
+        }
+        char *name = utf8(peer->name), *title = g_strdup_printf("%s%s   %d", name ? name : peer->id, i ? "" : "（自己）", peer->unread);
+        GtkLabel *text = GTK_LABEL(gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row)));
+        if (strcmp(gtk_label_get_text(text), title)) gtk_label_set_text(text, title);
+        if (!strcmp(peer->id, ui->peer)) {
+            selected = GTK_LIST_BOX_ROW(row);
+            char *recipient = g_strdup_printf("发送给：%s%s", name ? name : peer->id, !strcmp(peer->id, history->self) ? " · 自己的设备" : "");
+            gtk_label_set_text(GTK_LABEL(ui->recipient), recipient);
+            char *overview = g_strdup_printf("%s · 第 %d 页", name ? name : peer->id, ui->page + 1);
+            gtk_label_set_text(GTK_LABEL(ui->overview), overview);
+            g_free(overview);
+            g_free(recipient);
+        }
+        free(name);
+        g_free(title);
+    }
+    GtkListBoxRow *extra;
+    while ((extra = gtk_list_box_get_row_at_index(GTK_LIST_BOX(ui->users), history ? history->peer_count : 0)))
+        gtk_list_box_remove(GTK_LIST_BOX(ui->users), GTK_WIDGET(extra));
+    if (gtk_list_box_get_selected_row(GTK_LIST_BOX(ui->users)) != selected) gtk_list_box_select_row(GTK_LIST_BOX(ui->users), selected);
+}
+/* 比较实际绘制和详情所需字段；统计及状态变化不应清空文字、重置选区或产生无效重绘。 */
+static int same_messages(const drop_history *first, const drop_history *second) {
+    if (!first || !second || strcmp(first->self, second->self) || strcmp(first->peer, second->peer) || first->count != second->count ||
+        first->deletion_supported != second->deletion_supported)
+        return 0;
+    for (int i = 0; i < first->count; ++i) {
+        const drop_history_row *a = &first->rows[i], *b = &second->rows[i];
+        if (strcmp(a->id, b->id) || wcscmp(a->sender, b->sender) || wcscmp(a->time, b->time) || wcscmp(a->preview, b->preview) || a->unread != b->unread ||
+            a->deletable != b->deletable || a->pending != b->pending || !a->content || !b->content || a->content->count != b->content->count ||
+            wcscmp(a->content->text, b->content->text))
+            return 0;
+        for (int j = 0; j < a->content->count; ++j) {
+            const drop_file_view *x = &a->content->files[j], *y = &b->content->files[j];
+            if (strcmp(x->id, y->id) || strcmp(x->sha, y->sha) || wcscmp(x->name, y->name) || x->total != y->total || x->complete != y->complete) return 0;
+        }
+    }
+    return 1;
+}
+/* GTK 在下一帧重新计算文字高度；跨过布局帧再恢复滚动，避免用旧范围定位后被调整回顶部。 */
+static gboolean restore_scroll(GtkWidget *widget, GdkFrameClock *clock, gpointer context) {
+    (void)clock;
+    gtk_ui *ui = context;
+    GtkAdjustment *adjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(gtk_widget_get_parent(widget)));
+    gtk_adjustment_set_value(adjustment, ui->scroll_bottom ? gtk_adjustment_get_upper(adjustment) - gtk_adjustment_get_page_size(adjustment) : ui->scroll_position);
+    if (++ui->scroll_frames < 3) return G_SOURCE_CONTINUE;
+    ui->scroll_tick = 0;
+    return G_SOURCE_REMOVE;
+}
+/* 数据仍按最新页倒序读取，绘制反向遍历，保持与 Windows 相同的从旧到新、最新在底部的顺序。 */
+static void render(gtk_ui *ui, const drop_history *previous) {
     drop_history *history = ui->snapshot->history;
     GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(ui->messages));
     GtkTextIter end;
     ui->rebuilding = 1;
+    if (history) strcpy_s(ui->peer, DROP_ID_CAP, history->peer);
+    render_peers(ui);
+    gtk_widget_set_sensitive(ui->send, ui->snapshot->ready && drop_id_valid(ui->peer) && !ui->send_pending);
+    if (ui->messages_valid && same_messages(previous, history)) {
+        ui->rebuilding = 0;
+        return;
+    }
     GtkWidget *child;
-    while ((child = gtk_widget_get_first_child(ui->users)))
-        gtk_list_box_remove(GTK_LIST_BOX(ui->users), child);
     GtkTextIter sel_start, sel_end;
     gboolean selection = gtk_text_buffer_get_selection_bounds(buffer, &sel_start, &sel_end);
     int selection_start = gtk_text_iter_get_offset(&sel_start), selection_end = gtk_text_iter_get_offset(&sel_end);
     GtkWidget *scroll = gtk_widget_get_parent(ui->messages);
     GtkAdjustment *adjustment = GTK_IS_SCROLLED_WINDOW(scroll) ? gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll)) : NULL;
     double position = adjustment ? gtk_adjustment_get_value(adjustment) : 0;
+    int changed_peer = !previous || !history || strcmp(previous->peer, history->peer) || strcmp(previous->self, history->self);
+    int at_bottom = adjustment && position + gtk_adjustment_get_page_size(adjustment) >= gtk_adjustment_get_upper(adjustment) - 2;
     gtk_text_buffer_set_text(buffer, "", -1);
     memset(ui->file_ends, 0, sizeof(ui->file_ends));
     ui->row = -1;
     gtk_widget_set_sensitive(ui->delete_button, FALSE);
     gtk_widget_set_sensitive(ui->export_button, FALSE);
     if (history) {
-        strcpy_s(ui->peer, DROP_ID_CAP, history->peer);
-        for (int i = 0; i < history->peer_count; ++i) {
-            drop_peer *peer = &history->peers[i];
-            char *name = utf8(peer->name), *title = g_strdup_printf("%s%s   %d", name ? name : peer->id, i ? "" : "（自己）", peer->unread);
-            GtkWidget *widget = label(title), *row = gtk_list_box_row_new();
-            gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), widget);
-            g_object_set_data_full(G_OBJECT(row), "drop-peer", g_strdup(peer->id), g_free);
-            gtk_list_box_append(GTK_LIST_BOX(ui->users), row);
-            if (!strcmp(peer->id, ui->peer)) {
-                gtk_list_box_select_row(GTK_LIST_BOX(ui->users), GTK_LIST_BOX_ROW(row));
-                char *recipient = g_strdup_printf("发送给：%s%s", name ? name : peer->id, !strcmp(peer->id, history->self) ? " · 自己的设备" : "");
-                gtk_label_set_text(GTK_LABEL(ui->recipient), recipient);
-                char *overview = g_strdup_printf("%s · 第 %d 页", name ? name : peer->id, ui->page + 1);
-                gtk_label_set_text(GTK_LABEL(ui->overview), overview);
-                g_free(overview);
-                g_free(recipient);
-            }
-            free(name);
-            g_free(title);
-        }
-        for (int i = 0; i < history->count; ++i) {
+        for (int i = history->count - 1; i >= 0; --i) {
             drop_history_row *row = &history->rows[i];
             char *sender = utf8(row->sender), *time = utf8(row->time), *body = utf8(row->preview);
             char *head = g_strdup_printf("%s  %s · %s\n", sender ? sender : "", time ? time : "", row->unread ? "未读" : "本机已保存");
@@ -724,13 +821,18 @@ static void render(gtk_ui *ui) {
             g_free(head);
         }
     }
-    if (selection) {
+    if (selection && !changed_peer) {
         int total = gtk_text_buffer_get_char_count(buffer);
         gtk_text_buffer_get_iter_at_offset(buffer, &sel_start, MIN(selection_start, total));
         gtk_text_buffer_get_iter_at_offset(buffer, &sel_end, MIN(selection_end, total));
         gtk_text_buffer_select_range(buffer, &sel_start, &sel_end);
     }
-    if (adjustment) gtk_adjustment_set_value(adjustment, position);
+    if (adjustment) {
+        ui->scroll_bottom = changed_peer || !ui->messages_valid || (at_bottom && !selection) || (ui->scroll_tick && ui->scroll_bottom);
+        if (!ui->scroll_tick) ui->scroll_position = position;
+        ui->scroll_frames = 0;
+        if (!ui->scroll_tick) ui->scroll_tick = gtk_widget_add_tick_callback(ui->messages, restore_scroll, ui, NULL);
+    }
     if (ui->row >= 0)
         detail_show(ui, ui->row, ui->file);
     else {
@@ -738,8 +840,21 @@ static void render(gtk_ui *ui) {
         while ((child = gtk_widget_get_first_child(ui->files)))
             gtk_list_box_remove(GTK_LIST_BOX(ui->files), child);
     }
-    gtk_widget_set_sensitive(ui->send, ui->snapshot->ready && drop_id_valid(ui->peer) && !ui->send_pending);
+    ui->messages_valid = 1;
     ui->rebuilding = 0;
+}
+/* 通知和发送完成属于后台状态，旧视图被丢弃时仍消费一次，避免漏掉新消息提醒或清空确认。 */
+static void snapshot_notifications(gtk_ui *ui, const drop_snapshot *snapshot) {
+    drop_history *h = snapshot->history;
+    if (h && h->new_notifications && snapshot->notify && !gtk_widget_get_visible(ui->window)) {
+        GNotification *notification = g_notification_new("Drop 收到新消息");
+        g_notification_set_body(notification, "消息和附件正在同步到本机。");
+        g_application_send_notification(G_APPLICATION(ui->app), "drop-new-message", notification);
+        g_object_unref(notification);
+    }
+    if (ui->bus && ui->tray_registration)
+        g_dbus_connection_emit_signal(ui->bus, NULL, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewStatus",
+            g_variant_new("(s)", snapshot->attention && h && h->unread ? "NeedsAttention" : "Active"), NULL);
 }
 static gboolean poll_snapshot(gpointer context) {
     gtk_ui *ui = context;
@@ -749,6 +864,7 @@ static gboolean poll_snapshot(gpointer context) {
     }
     drop_snapshot *snapshot = drop_runtime_take(ui->runtime);
     if (!snapshot) return G_SOURCE_CONTINUE;
+    snapshot_notifications(ui, snapshot);
     if (ui->send_pending && snapshot->send_finished > ui->pending_finished) {
         if (snapshot->send_serial > ui->pending_serial) {
             gtk_text_buffer_set_text(gtk_text_view_get_buffer(GTK_TEXT_VIEW(ui->compose)), "", -1);
@@ -760,22 +876,19 @@ static gboolean poll_snapshot(gpointer context) {
         ui->send_pending = 0;
         gtk_text_view_set_editable(GTK_TEXT_VIEW(ui->compose), TRUE);
     }
-    drop_snapshot_free(ui->snapshot);
+    /* 快速 A→B→A 时不能只比账号；序号同时区分账号、分页、筛选和登录命令，迟到结果无权覆盖最新选择。 */
+    if (snapshot->view_serial < ui->view_serial) {
+        drop_snapshot_free(snapshot);
+        return G_SOURCE_CONTINUE;
+    }
+    drop_snapshot *previous = ui->snapshot;
     ui->snapshot = snapshot;
-    render(ui);
+    render(ui, previous ? previous->history : NULL);
+    drop_snapshot_free(previous);
     char status[512];
     drop_history *h = snapshot->history;
     sprintf_s(status, sizeof(status), "%s · 待发送 %d · 下载 %d · 待删除 %d", snapshot->status, h ? h->pending_count : 0, h ? h->downloads : 0, h ? h->pending_deletes : 0);
     gtk_label_set_text(GTK_LABEL(ui->status), status);
-    if (h && h->new_notifications && snapshot->notify && !gtk_widget_get_visible(ui->window)) {
-        GNotification *notification = g_notification_new("Drop 收到新消息");
-        g_notification_set_body(notification, "消息和附件正在同步到本机。");
-        g_application_send_notification(G_APPLICATION(ui->app), "drop-new-message", notification);
-        g_object_unref(notification);
-    }
-    if (ui->bus && ui->tray_registration)
-        g_dbus_connection_emit_signal(ui->bus, NULL, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewStatus",
-            g_variant_new("(s)", snapshot->attention && h && h->unread ? "NeedsAttention" : "Active"), NULL);
     return G_SOURCE_CONTINUE;
 }
 #ifdef DROP_GUI_CHECKS
@@ -1005,6 +1118,7 @@ int drop_native_ui(const WCHAR *root, int hidden) {
     g_signal_connect(ui.app, "activate", G_CALLBACK(activate), &ui);
     result = g_application_run(G_APPLICATION(ui.app), 0, NULL);
     if (ui.poll) g_source_remove(ui.poll);
+    if (ui.scroll_tick) gtk_widget_remove_tick_callback(ui.messages, ui.scroll_tick);
     drop_runtime_stop(ui.runtime);
     drop_snapshot_free(ui.snapshot);
     for (int i = 0; i < ui.count; ++i)

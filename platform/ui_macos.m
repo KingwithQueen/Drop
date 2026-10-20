@@ -24,6 +24,24 @@ static drop_task *new_task(drop_task_kind kind) {
     if (task) task->kind = kind;
     return task;
 }
+/* 仅比较实际绘制及详情依赖的字段；后台统计变化不能重写正文、丢失选区或重置滚动位置。 */
+static BOOL same_messages(const drop_history *first, const drop_history *second) {
+    if (!first || !second || strcmp(first->self, second->self) || strcmp(first->peer, second->peer) || first->count != second->count ||
+        first->deletion_supported != second->deletion_supported)
+        return NO;
+    for (int i = 0; i < first->count; ++i) {
+        const drop_history_row *a = &first->rows[i], *b = &second->rows[i];
+        if (strcmp(a->id, b->id) || wcscmp(a->sender, b->sender) || wcscmp(a->time, b->time) || wcscmp(a->preview, b->preview) || a->unread != b->unread ||
+            a->deletable != b->deletable || a->pending != b->pending || !a->content || !b->content || a->content->count != b->content->count ||
+            wcscmp(a->content->text, b->content->text))
+            return NO;
+        for (int j = 0; j < a->content->count; ++j) {
+            const drop_file_view *x = &a->content->files[j], *y = &b->content->files[j];
+            if (strcmp(x->id, y->id) || strcmp(x->sha, y->sha) || wcscmp(x->name, y->name) || x->total != y->total || x->complete != y->complete) return NO;
+        }
+    }
+    return YES;
+}
 @interface DropView : NSView
 @end
 @implementation DropView
@@ -65,6 +83,7 @@ static drop_task *new_task(drop_task_kind kind) {
 @property(nonatomic, strong) NSButton *send, *deleteButton, *exportButton;
 @property(nonatomic, strong) NSButton *notify, *attention;
 @property(nonatomic, strong) NSMutableArray<NSString *> *paths;
+@property(nonatomic, strong) NSMutableArray<NSString *> *userIDs;
 @property(nonatomic, strong) NSMutableArray<NSValue *> *ranges;
 @property(nonatomic, strong) NSMutableArray<NSArray<NSValue *> *> *fileRanges;
 @property(nonatomic, strong) NSTimer *timer;
@@ -75,14 +94,17 @@ static drop_task *new_task(drop_task_kind kind) {
 @property(nonatomic) drop_snapshot *snapshot;
 @property(nonatomic) NSInteger selectedRow, selectedFile, page;
 @property(nonatomic) BOOL rebuilding, hidden;
-@property(nonatomic) BOOL sendPending;
-@property(nonatomic) uint64_t pendingFinished, pendingSerial;
+@property(nonatomic) BOOL sendPending, messagesValid;
+@property(nonatomic) uint64_t pendingFinished, pendingSerial, viewSerial;
 @property(nonatomic, copy) NSString *peer, *selected;
 - (void)sendMessage:(id)sender;
 - (void)addURLs:(NSArray<NSURL *> *)urls;
 - (void)deleteMessage:(id)sender;
 - (void)exportAttachment:(id)sender;
 - (void)showFullText:(id)sender;
+- (void)applySnapshot:(drop_snapshot *)snapshot;
+- (NSString *)userTextAtRow:(NSInteger)row column:(NSTableColumn *)column;
+- (void)updateUsers;
 @end
 
 @implementation DropComposer
@@ -188,7 +210,29 @@ static void gui_probe_start(DropController *controller);
 }
 /* 界面任务不能借用 NSString 的临时 UTF-8 内存；每个字段复制后由 C 后台统一释放。 */
 - (BOOL)submit:(drop_task *)task {
-    if (task && drop_runtime_submit(self.runtime, task)) return YES;
+    BOOL view = task && (task->kind == DROP_TASK_VIEW || task->kind == DROP_TASK_FIND || task->kind == DROP_TASK_LOGIN || task->kind == DROP_TASK_LOGOUT);
+    if (view) task->view_serial = self.viewSerial + 1;
+    if (task && drop_runtime_submit(self.runtime, task)) {
+        if (view) {
+            ++self.viewSerial;
+            self.send.enabled = NO;
+            /* 请求成功入队后清除旧会话的可操作内容；新快照到达前不能导出或删除旧会话的附件。 */
+            BOOL rebuilding = self.rebuilding;
+            self.rebuilding = YES;
+            self.messagesValid = NO;
+            self.selected = @"";
+            self.selectedRow = self.selectedFile = -1;
+            self.messages.string = @"";
+            self.detail.string = @"";
+            [self.ranges removeAllObjects];
+            [self.fileRanges removeAllObjects];
+            [self.files reloadData];
+            self.deleteButton.enabled = self.exportButton.enabled = NO;
+            self.fileLabel.stringValue = @"所选消息的附件（0）";
+            self.rebuilding = rebuilding;
+        }
+        return YES;
+    }
     drop_task_free(task);
     self.status.stringValue = @"任务队列忙，请稍后重试。";
     return NO;
@@ -196,6 +240,7 @@ static void gui_probe_start(DropController *controller);
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     (void)notification;
     self.paths = [NSMutableArray array];
+    self.userIDs = [NSMutableArray array];
     self.ranges = [NSMutableArray array];
     self.fileRanges = [NSMutableArray array];
     self.peer = @"";
@@ -490,9 +535,9 @@ static void gui_probe_start(DropController *controller);
     if (task) task->login = strdup(self.find.stringValue.UTF8String);
     [self submit:task];
 }
-- (void)viewRequest {
+- (BOOL)viewRequest {
     drop_task *task = new_task(DROP_TASK_VIEW);
-    if (!task) return;
+    if (!task) return NO;
     strcpy_s(task->peer, DROP_ID_CAP, self.peer.UTF8String);
     task->page = (int)self.page;
     task->text = strdup(self.search.stringValue.UTF8String);
@@ -508,7 +553,7 @@ static void gui_probe_start(DropController *controller);
             if (!date || ![[formatter stringFromDate:date] isEqual:fields[i]]) {
                 self.status.stringValue = @"日期格式：YYYY-MM-DD。";
                 drop_task_free(task);
-                return;
+                return NO;
             }
             if (i) {
                 NSDate *next = [[NSCalendar currentCalendar] dateByAddingUnit:NSCalendarUnitDay value:1 toDate:date options:0];
@@ -518,7 +563,7 @@ static void gui_probe_start(DropController *controller);
         }
     task->from = times[0];
     task->to = times[1];
-    [self submit:task];
+    return [self submit:task];
 }
 - (void)filter:(id)sender {
     (void)sender;
@@ -539,8 +584,8 @@ static void gui_probe_start(DropController *controller);
 }
 - (NSInteger)numberOfRowsInTableView:(NSTableView *)table {
     if (table == self.draft) return (NSInteger)self.paths.count;
+    if (table == self.users) return (NSInteger)self.userIDs.count;
     if (!self.snapshot || !self.snapshot->history) return 0;
-    if (table == self.users) return self.snapshot->history->peer_count;
     if (self.selectedRow < 0 || self.selectedRow >= self.snapshot->history->count) return 0;
     drop_detail *detail = self.snapshot->history->rows[self.selectedRow].content;
     return detail ? detail->count : 0;
@@ -567,8 +612,19 @@ static void gui_probe_start(DropController *controller);
         uint64_t size = !lstat(path.fileSystemRepresentation, &st) && st.st_size >= 0 ? (uint64_t)st.st_size : 0;
         text = [NSString stringWithFormat:@"%llu", (unsigned long long)size];
     } else if (table == self.users) {
-        drop_peer *peer = &self.snapshot->history->peers[row];
-        text = [column.identifier isEqual:@"unread"] ? [NSString stringWithFormat:@"%d", peer->unread] : [native_text(peer->name) stringByAppendingString:row ? @"" : @"（自己）"];
+        NSTableCellView *cell = [table makeViewWithIdentifier:column.identifier owner:self];
+        if (!cell) {
+            cell = [[NSTableCellView alloc] initWithFrame:NSMakeRect(0, 0, column.width, table.rowHeight)];
+            cell.identifier = column.identifier;
+            NSTextField *label = [self label:@""];
+            label.frame = NSMakeRect(3, 2, MAX(1, column.width - 6), 18);
+            label.autoresizingMask = NSViewWidthSizable;
+            /* textField 是弱引用；先由视图树持有标签，再设置单元格出口，避免 ARC 提前释放文字控件。 */
+            [cell addSubview:label];
+            cell.textField = label;
+        }
+        cell.textField.stringValue = [self userTextAtRow:row column:column];
+        return cell;
     } else {
         drop_file_view *file = &self.snapshot->history->rows[self.selectedRow].content->files[row];
         if ([column.identifier isEqual:@"file"])
@@ -580,21 +636,78 @@ static void gui_probe_start(DropController *controller);
     }
     return [self label:text];
 }
+/* 表格行以账号 ID 为身份；只插入、移动或移除实际变化的行，普通同步直接更新已有单元格的文字。 */
+- (NSString *)userTextAtRow:(NSInteger)row column:(NSTableColumn *)column {
+    if (row < 0 || row >= (NSInteger)self.userIDs.count || !self.snapshot || !self.snapshot->history) return @"";
+    drop_history *history = self.snapshot->history;
+    for (int i = 0; i < history->peer_count; ++i) {
+        drop_peer *peer = &history->peers[i];
+        if (strcmp(peer->id, self.userIDs[(NSUInteger)row].UTF8String)) continue;
+        return [column.identifier isEqual:@"unread"] ? [NSString stringWithFormat:@"%d", peer->unread]
+                                                     : [native_text(peer->name) stringByAppendingString:strcmp(peer->id, history->self) ? @"" : @"（自己）"];
+    }
+    return @"";
+}
+- (void)updateUsers {
+    NSMutableArray<NSString *> *desired = [NSMutableArray array];
+    drop_history *history = self.snapshot->history;
+    if (history)
+        for (int i = 0; i < history->peer_count; ++i)
+            [desired addObject:[NSString stringWithUTF8String:history->peers[i].id]];
+    if (![self.userIDs isEqualToArray:desired]) {
+        [self.users beginUpdates];
+        for (NSInteger i = (NSInteger)self.userIDs.count - 1; i >= 0; --i)
+            if (![desired containsObject:self.userIDs[(NSUInteger)i]]) {
+                [self.userIDs removeObjectAtIndex:(NSUInteger)i];
+                [self.users removeRowsAtIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)i] withAnimation:NSTableViewAnimationEffectNone];
+            }
+        for (NSUInteger i = 0; i < desired.count; ++i) {
+            NSUInteger old = [self.userIDs indexOfObject:desired[i]];
+            if (old == NSNotFound) {
+                [self.userIDs insertObject:desired[i] atIndex:i];
+                [self.users insertRowsAtIndexes:[NSIndexSet indexSetWithIndex:i] withAnimation:NSTableViewAnimationEffectNone];
+            } else if (old != i) {
+                [self.userIDs removeObjectAtIndex:old];
+                [self.userIDs insertObject:desired[i] atIndex:i];
+                [self.users moveRowAtIndex:(NSInteger)old toIndex:(NSInteger)i];
+            }
+        }
+        [self.users endUpdates];
+    }
+    for (NSInteger row = 0; row < (NSInteger)self.userIDs.count; ++row)
+        for (NSInteger column = 0; column < self.users.numberOfColumns; ++column) {
+            NSTableCellView *cell = [self.users viewAtColumn:column row:row makeIfNecessary:NO];
+            NSString *text = [self userTextAtRow:row column:self.users.tableColumns[(NSUInteger)column]];
+            if (cell && ![cell.textField.stringValue isEqual:text]) cell.textField.stringValue = text;
+        }
+    NSUInteger selected = [self.userIDs indexOfObject:self.peer];
+    if (selected == NSNotFound) {
+        if (self.users.selectedRow >= 0) [self.users deselectAll:nil];
+    } else if (self.users.selectedRow != (NSInteger)selected)
+        [self.users selectRowIndexes:[NSIndexSet indexSetWithIndex:selected] byExtendingSelection:NO];
+}
 - (void)tableViewSelectionDidChange:(NSNotification *)notification {
     if (notification.object == self.draft) return;
     if (self.rebuilding || !self.snapshot || !self.snapshot->history) return;
     if (notification.object == self.users) {
         NSInteger row = self.users.selectedRow;
-        if (row < 0 || row >= self.snapshot->history->peer_count) return;
-        self.peer = [NSString stringWithUTF8String:self.snapshot->history->peers[row].id];
+        if (row < 0 || row >= (NSInteger)self.userIDs.count || [self.peer isEqual:self.userIDs[(NSUInteger)row]]) return;
+        NSString *previous = self.peer;
+        NSInteger page = self.page;
+        self.peer = self.userIDs[(NSUInteger)row];
         self.page = 0;
-        self.send.enabled = NO;
-        [self viewRequest];
+        if (![self viewRequest]) {
+            self.peer = previous;
+            self.page = page;
+            self.rebuilding = YES;
+            [self updateUsers];
+            self.rebuilding = NO;
+        }
     } else
         self.selectedFile = self.files.selectedRow;
 }
 - (void)selectMessage:(NSInteger)row file:(NSInteger)file {
-    if (!self.snapshot || !self.snapshot->history || row < 0 || row >= self.snapshot->history->count) return;
+    if (!self.snapshot || self.snapshot->view_serial != self.viewSerial || !self.snapshot->history || row < 0 || row >= self.snapshot->history->count) return;
     drop_history_row *message = &self.snapshot->history->rows[row];
     self.selectedRow = row;
     self.selectedFile = file;
@@ -734,7 +847,8 @@ static void gui_probe_start(DropController *controller);
 }
 - (void)exportAttachment:(id)sender {
     (void)sender;
-    if (!self.snapshot || !self.snapshot->history || self.selectedRow < 0 || self.selectedRow >= self.snapshot->history->count) return;
+    if (!self.snapshot || self.snapshot->view_serial != self.viewSerial || !self.snapshot->history || self.selectedRow < 0 || self.selectedRow >= self.snapshot->history->count)
+        return;
     drop_history_row *message = &self.snapshot->history->rows[self.selectedRow];
     if (!message->content || self.selectedFile < 0 || self.selectedFile >= message->content->count || !message->content->files[self.selectedFile].complete) {
         self.status.stringValue = @"请选择已完整保存的附件。";
@@ -845,82 +959,11 @@ static void gui_probe_start(DropController *controller);
     }
     drop_snapshot *snapshot = drop_runtime_take(self.runtime);
     if (!snapshot) return;
-    if (self.sendPending && snapshot->send_finished > self.pendingFinished) {
-        self.sendPending = NO;
-        self.compose.editable = YES;
-        if (snapshot->send_serial > self.pendingSerial) {
-            self.compose.string = @"";
-            [self clearAttachments:nil];
-        }
-    }
-    drop_snapshot_free(self.snapshot);
-    self.snapshot = snapshot;
-    self.rebuilding = YES;
-    [self.users reloadData];
-    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:@""];
-    [self.ranges removeAllObjects];
-    [self.fileRanges removeAllObjects];
-    self.selectedRow = -1;
+    [self applySnapshot:snapshot];
+}
+/* 消费快照所有权；发送完成及通知独立处理，旧视图即使迟到也不能把账号、页码和正文退回。 */
+- (void)applySnapshot:(drop_snapshot *)snapshot {
     drop_history *history = snapshot->history;
-    if (history) {
-        self.peer = [NSString stringWithUTF8String:history->peer];
-        for (int i = 0; i < history->peer_count; ++i)
-            if (!strcmp(history->peers[i].id, history->peer)) {
-                [self.users selectRowIndexes:[NSIndexSet indexSetWithIndex:(NSUInteger)i] byExtendingSelection:NO];
-                self.recipient.stringValue =
-                    [NSString stringWithFormat:@"发送给：%@%@", native_text(history->peers[i].name), !strcmp(history->peer, history->self) ? @" · 自己的设备" : @""];
-                self.overview.stringValue = [NSString stringWithFormat:@"%@ · 第 %ld 页", native_text(history->peers[i].name), (long)self.page + 1];
-            }
-        NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
-        paragraph.paragraphSpacing = 0;
-        paragraph.lineSpacing = 0;
-        NSDictionary *normal =
-            @{NSFontAttributeName : [NSFont systemFontOfSize:13], NSForegroundColorAttributeName : [NSColor textColor], NSParagraphStyleAttributeName : paragraph};
-        NSDictionary *header = @{
-            NSFontAttributeName : [NSFont boldSystemFontOfSize:13],
-            NSForegroundColorAttributeName : [NSColor colorWithRed:.19 green:.35 blue:.53 alpha:1],
-            NSParagraphStyleAttributeName : paragraph
-        };
-        for (int i = 0; i < history->count; ++i) {
-            drop_history_row *row = &history->rows[i];
-            NSUInteger start = text.length;
-            NSString *heading = [NSString stringWithFormat:@"%@  %@ · %@\n", native_text(row->sender), native_text(row->time), row->unread ? @"未读" : @"本机已保存"];
-            [text appendAttributedString:[[NSAttributedString alloc] initWithString:heading attributes:header]];
-            NSString *body = native_text(row->preview);
-            if (body.length) [text appendAttributedString:[[NSAttributedString alloc] initWithString:[body stringByAppendingString:@"\n"] attributes:normal]];
-            NSMutableArray *fileRanges = [NSMutableArray array];
-            if (row->content)
-                for (int j = 0; j < row->content->count; ++j) {
-                    drop_file_view *file = &row->content->files[j];
-                    NSUInteger fileStart = text.length;
-                    NSString *line = [NSString stringWithFormat:@"    附件：%@ · %llu 字节 · %@\n", native_text(file->name), (unsigned long long)file->total,
-                        file->complete ? @"已缓存到本机" : @"待下载"];
-                    [text appendAttributedString:[[NSAttributedString alloc] initWithString:line attributes:header]];
-                    [fileRanges addObject:[NSValue valueWithRange:NSMakeRange(fileStart, text.length - fileStart)]];
-                }
-            [self.fileRanges addObject:fileRanges];
-            [self.ranges addObject:[NSValue valueWithRange:NSMakeRange(start, text.length - start)]];
-            if ([self.selected isEqual:[NSString stringWithUTF8String:row->id]]) self.selectedRow = i;
-        }
-    }
-    NSRange selection = self.messages.selectedRange;
-    NSPoint scroll = self.messageScroll.contentView.bounds.origin;
-    [self.messages.textStorage setAttributedString:text];
-    if (NSMaxRange(selection) <= text.length) self.messages.selectedRange = selection;
-    [self.messageScroll.contentView scrollToPoint:scroll];
-    [self.messageScroll reflectScrolledClipView:self.messageScroll.contentView];
-    self.deleteButton.enabled = NO;
-    self.exportButton.enabled = NO;
-    if (self.selectedRow >= 0)
-        [self selectMessage:self.selectedRow file:self.selectedFile];
-    else {
-        self.detail.string = @"";
-        [self.files reloadData];
-    }
-    self.send.enabled = snapshot->ready && self.peer.length == 32 && !self.sendPending;
-    self.status.stringValue = [NSString stringWithFormat:@"%@ · 待发送 %d · 下载 %d · 待删除 %d", [NSString stringWithUTF8String:snapshot->status],
-        history ? history->pending_count : 0, history ? history->downloads : 0, history ? history->pending_deletes : 0];
-    self.statusItem.button.title = snapshot->attention && history && history->unread ? [NSString stringWithFormat:@"Drop %d", history->unread] : @"Drop";
     if (snapshot->attention && history && history->new_notifications && self.window.visible) [NSApp requestUserAttention:NSInformationalRequest];
     if (snapshot->notify && history && history->new_notifications && !self.window.visible && [NSBundle mainBundle].bundleIdentifier) {
         UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
@@ -929,7 +972,102 @@ static void gui_probe_start(DropController *controller);
         [[UNUserNotificationCenter currentNotificationCenter] addNotificationRequest:[UNNotificationRequest requestWithIdentifier:@"drop-new-message" content:content trigger:nil]
                                                                withCompletionHandler:nil];
     }
+    if (self.sendPending && snapshot->send_finished > self.pendingFinished) {
+        self.sendPending = NO;
+        self.compose.editable = YES;
+        if (snapshot->send_serial > self.pendingSerial) {
+            self.compose.string = @"";
+            [self clearAttachments:nil];
+        }
+    }
+    if (snapshot->view_serial < self.viewSerial) {
+        drop_snapshot_free(snapshot);
+        return;
+    }
+    drop_snapshot *previous = self.snapshot;
+    BOOL changed = !self.messagesValid || !same_messages(previous ? previous->history : NULL, history);
+    BOOL changedView =
+        !self.messagesValid || !previous || !previous->history || !history || strcmp(previous->history->peer, history->peer) || strcmp(previous->history->self, history->self);
+    self.snapshot = snapshot;
+    self.rebuilding = YES;
+    if (history) self.peer = [NSString stringWithUTF8String:history->peer];
+    [self updateUsers];
+    NSString *recipient = @"发送给：请选择账号", *overview = @"消息";
+    if (history)
+        for (int i = 0; i < history->peer_count; ++i)
+            if (!strcmp(history->peers[i].id, history->peer)) {
+                recipient = [NSString stringWithFormat:@"发送给：%@%@", native_text(history->peers[i].name), !strcmp(history->peer, history->self) ? @" · 自己的设备" : @""];
+                overview = [NSString stringWithFormat:@"%@ · 第 %ld 页", native_text(history->peers[i].name), (long)self.page + 1];
+            }
+    if (![self.recipient.stringValue isEqual:recipient]) self.recipient.stringValue = recipient;
+    if (![self.overview.stringValue isEqual:overview]) self.overview.stringValue = overview;
+    if (changed) {
+        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:@""];
+        [self.ranges removeAllObjects];
+        [self.fileRanges removeAllObjects];
+        self.selectedRow = -1;
+        if (history) {
+            NSMutableParagraphStyle *paragraph = [[NSMutableParagraphStyle alloc] init];
+            paragraph.paragraphSpacing = 0;
+            paragraph.lineSpacing = 0;
+            NSDictionary *normal =
+                @{NSFontAttributeName : [NSFont systemFontOfSize:13], NSForegroundColorAttributeName : [NSColor textColor], NSParagraphStyleAttributeName : paragraph};
+            NSDictionary *header = @{
+                NSFontAttributeName : [NSFont boldSystemFontOfSize:13],
+                NSForegroundColorAttributeName : [NSColor colorWithRed:.19 green:.35 blue:.53 alpha:1],
+                NSParagraphStyleAttributeName : paragraph
+            };
+            /* 数据库仍按最新页倒序查询；反向绘制，并将范围按原始行下标存放，附件命中和删除身份保持一致。 */
+            for (int i = history->count - 1; i >= 0; --i) {
+                drop_history_row *row = &history->rows[i];
+                NSUInteger start = text.length;
+                NSString *heading = [NSString stringWithFormat:@"%@  %@ · %@\n", native_text(row->sender), native_text(row->time), row->unread ? @"未读" : @"本机已保存"];
+                [text appendAttributedString:[[NSAttributedString alloc] initWithString:heading attributes:header]];
+                NSString *body = native_text(row->preview);
+                if (body.length) [text appendAttributedString:[[NSAttributedString alloc] initWithString:[body stringByAppendingString:@"\n"] attributes:normal]];
+                NSMutableArray *fileRanges = [NSMutableArray array];
+                if (row->content)
+                    for (int j = 0; j < row->content->count; ++j) {
+                        drop_file_view *file = &row->content->files[j];
+                        NSUInteger fileStart = text.length;
+                        NSString *line = [NSString stringWithFormat:@"    附件：%@ · %llu 字节 · %@\n", native_text(file->name), (unsigned long long)file->total,
+                            file->complete ? @"已缓存到本机" : @"待下载"];
+                        [text appendAttributedString:[[NSAttributedString alloc] initWithString:line attributes:header]];
+                        [fileRanges addObject:[NSValue valueWithRange:NSMakeRange(fileStart, text.length - fileStart)]];
+                    }
+                [self.fileRanges insertObject:fileRanges atIndex:0];
+                [self.ranges insertObject:[NSValue valueWithRange:NSMakeRange(start, text.length - start)] atIndex:0];
+                if ([self.selected isEqual:[NSString stringWithUTF8String:row->id]]) self.selectedRow = i;
+            }
+        }
+        NSRange selection = self.messages.selectedRange;
+        NSPoint scroll = self.messageScroll.contentView.bounds.origin;
+        BOOL bottom = NSMaxY(self.messageScroll.contentView.bounds) >= NSMaxY(self.messages.bounds) - 2;
+        [self.messages.textStorage setAttributedString:text];
+        if (!changedView && NSMaxRange(selection) <= text.length) self.messages.selectedRange = selection;
+        /* AppKit 完成文字布局后再定位；切换会话显示最新消息，阅读旧历史时保留原滚动位置。 */
+        [self.messages.layoutManager ensureLayoutForTextContainer:self.messages.textContainer];
+        if (changedView || (bottom && !selection.length))
+            [self.messages scrollRangeToVisible:NSMakeRange(text.length, 0)];
+        else
+            [self.messageScroll.contentView scrollToPoint:scroll];
+        [self.messageScroll reflectScrolledClipView:self.messageScroll.contentView];
+        self.deleteButton.enabled = NO;
+        self.exportButton.enabled = NO;
+        if (self.selectedRow >= 0)
+            [self selectMessage:self.selectedRow file:self.selectedFile];
+        else {
+            self.detail.string = @"";
+            [self.files reloadData];
+        }
+        self.messagesValid = YES;
+    }
+    self.send.enabled = snapshot->ready && self.peer.length == 32 && !self.sendPending;
+    self.status.stringValue = [NSString stringWithFormat:@"%@ · 待发送 %d · 下载 %d · 待删除 %d", [NSString stringWithUTF8String:snapshot->status],
+        history ? history->pending_count : 0, history ? history->downloads : 0, history ? history->pending_deletes : 0];
+    self.statusItem.button.title = snapshot->attention && history && history->unread ? [NSString stringWithFormat:@"Drop %d", history->unread] : @"Drop";
     self.rebuilding = NO;
+    drop_snapshot_free(previous);
 }
 @end
 

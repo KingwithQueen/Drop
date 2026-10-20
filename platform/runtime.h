@@ -16,7 +16,7 @@ typedef enum {
     DROP_TASK_REVIEW,
     DROP_TASK_PREFERENCES
 } drop_task_kind;
-/* 界面提交后转移全部字符串所有权；队列和密码由后台统一释放，界面不借用数据库或客户端。 */
+/* 界面提交后转移全部字符串所有权；队列和密码由后台统一释放。view_serial 标识最新视图意图，不用于协议或数据库。 */
 typedef struct drop_task {
     drop_task_kind kind;
     char peer[DROP_ID_CAP], message[DROP_ID_CAP], object[DROP_ID_CAP], account[DROP_ID_CAP];
@@ -25,15 +25,17 @@ typedef struct drop_task {
     int count, page;
     int notify, attention;
     int64_t from, to;
+    uint64_t view_serial;
     struct drop_task *next;
 } drop_task;
-/* 快照拥有历史，界面取走后必须释放；账号、视图和状态总是来自同一次后台更新。 */
+/* 快照拥有历史，界面取走后必须释放；view_serial 回传已处理的视图意图，防止迟到快照覆盖新的用户选择。 */
 typedef struct drop_snapshot {
     drop_history *history;
     char status[256], url[8193], login[65], ca[131072];
     int ready, busy;
     int notify, attention;
     uint64_t send_serial, send_finished;
+    uint64_t view_serial;
     drop_error error;
 } drop_snapshot;
 

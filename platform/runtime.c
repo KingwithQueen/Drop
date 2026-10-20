@@ -16,7 +16,7 @@ struct drop_runtime {
     drop_snapshot *snapshot;
     atomic_int changed, stopping;
     int events_running;
-    uint64_t send_serial, send_finished;
+    uint64_t send_serial, send_finished, view_serial;
     int notify, attention;
     char saved_url[8193], saved_login[65], saved_ca[131072];
     WCHAR event_url[2049], event_ca[32768];
@@ -46,21 +46,35 @@ void drop_snapshot_free(drop_snapshot *snapshot) {
     }
 }
 int drop_runtime_submit(drop_runtime *runtime, drop_task *task) {
+    drop_task *replaced = NULL;
     if (!runtime || !task || task->next || task->count < 0 || task->count > DROP_MAX_ATTACHMENTS) return 0;
     pthread_mutex_lock(&runtime->mutex);
-    if (runtime->queued == 32 || atomic_load(&runtime->stopping)) {
+    int replace_view = task->kind == DROP_TASK_VIEW && runtime->tail && runtime->tail->kind == DROP_TASK_VIEW;
+    if ((runtime->queued == 32 && !replace_view) || atomic_load(&runtime->stopping)) {
         pthread_mutex_unlock(&runtime->mutex);
         return 0;
     }
-    if (runtime->tail)
+    /* 只合并队尾连续的本机视图请求；不跨越发送、登录或删除任务，避免改变账号及持久操作的先后关系。 */
+    if (replace_view) {
+        replaced = runtime->tail;
+        if (runtime->head == replaced)
+            runtime->head = task;
+        else {
+            drop_task *previous = runtime->head;
+            while (previous->next != replaced)
+                previous = previous->next;
+            previous->next = task;
+        }
+    } else if (runtime->tail)
         runtime->tail->next = task;
     else
         runtime->head = task;
     runtime->tail = task;
-    ++runtime->queued;
+    if (!replace_view) ++runtime->queued;
     drop_posix_event_set(runtime->work);
     pthread_cond_signal(&runtime->wake);
     pthread_mutex_unlock(&runtime->mutex);
+    drop_task_free(replaced);
     return 1;
 }
 drop_snapshot *drop_runtime_take(drop_runtime *runtime) {
@@ -81,6 +95,7 @@ static void publish(drop_runtime *runtime, drop_client *client, int ready, int b
     snapshot->error = error;
     snapshot->send_serial = runtime->send_serial;
     snapshot->send_finished = runtime->send_finished;
+    snapshot->view_serial = runtime->view_serial;
     snapshot->notify = runtime->notify;
     snapshot->attention = runtime->attention;
     strcpy_s(snapshot->url, sizeof(snapshot->url), runtime->saved_url);
@@ -227,6 +242,11 @@ done:
     cJSON_Delete(json);
     free(bytes);
 }
+/* 同步步骤在既有事务完成后让出工作线程；交互只等待当前请求，不继续排在整轮网络同步之后。 */
+static drop_error sync_step(drop_runtime *runtime, drop_client *client, drop_error (*step)(drop_client *)) {
+    if (WaitForSingleObject(runtime->work, 0) == WAIT_OBJECT_0) return DROP_E_PENDING;
+    return step(client);
+}
 /* 所有数据库访问和凭据变更都在此线程进行，任务失败不清空原有持久发送/删除队列。 */
 static void *worker(void *context) {
     drop_runtime *runtime = context;
@@ -259,6 +279,8 @@ static void *worker(void *context) {
         pthread_mutex_unlock(&runtime->mutex);
         if (task) {
             error = ready ? DROP_OK : DROP_E_AUTH;
+            if (task->kind == DROP_TASK_VIEW || task->kind == DROP_TASK_FIND || task->kind == DROP_TASK_LOGIN || task->kind == DROP_TASK_LOGOUT)
+                runtime->view_serial = task->view_serial;
             if (task->kind == DROP_TASK_SEND) ++runtime->send_finished;
             if (task->kind == DROP_TASK_PREFERENCES) {
                 int old_notify = runtime->notify, old_attention = runtime->attention;
@@ -361,18 +383,21 @@ static void *worker(void *context) {
             drop_task_free(task);
         }
         if (ready && (do_sync || atomic_exchange(&runtime->changed, 0) || GetTickCount64() >= next_sync)) {
-            client->sync_page_limit = 100;
+            /* 与 Windows 保持相同的两页预算，历史补齐分轮推进，避免一次补拉大量正文阻塞本机切换。 */
+            client->sync_page_limit = 2;
             client->download_quantum = UINT64_C(4194304);
             client->downloaded_bytes = 0;
-            error = drop_client_reconcile(client);
-            if (error == DROP_OK) error = drop_client_deletions(client);
-            if (error == DROP_OK) error = drop_client_read_receipts(client);
-            if (error == DROP_OK) error = drop_client_sync(client);
-            if (error == DROP_OK) error = drop_client_flush(client);
-            if (error == DROP_OK) error = drop_client_deletions(client);
+            error = sync_step(runtime, client, drop_client_reconcile);
+            if (error == DROP_OK) error = sync_step(runtime, client, drop_client_deletions);
+            if (error == DROP_OK) error = sync_step(runtime, client, drop_client_read_receipts);
+            if (error == DROP_OK) error = sync_step(runtime, client, drop_client_sync);
+            if (error == DROP_OK) error = sync_step(runtime, client, drop_client_flush);
+            if (error == DROP_OK) error = sync_step(runtime, client, drop_client_deletions);
             if (error == DROP_OK) {
                 retry = 1;
-                next_sync = GetTickCount64() + ((client->more_bodies || client->more_downloads || client->more_deletions) ? 100 : 30000);
+                next_sync = GetTickCount64() + ((client->more_bodies || client->more_downloads || client->more_deletions || client->more_profiles) ? 100 : 30000);
+            } else if (error == DROP_E_PENDING) {
+                next_sync = GetTickCount64() + 100;
             } else {
                 next_sync = GetTickCount64() + (uint64_t)retry * 1000;
                 if (retry < 60) retry = retry > 30 ? 60 : retry * 2;
@@ -391,9 +416,17 @@ static void *worker(void *context) {
         pthread_mutex_lock(&runtime->mutex);
         if (!runtime->head && !atomic_load(&runtime->stopping) && !atomic_load(&runtime->changed)) {
             struct timespec until;
+            uint64_t now = GetTickCount64(), delay = ready ? (next_sync > now ? next_sync - now : 0) : 1000;
+            if (delay > 1000) delay = 1000;
+            /* 有续传或补页时按真实的下一次截止时间等待；固定睡一秒会把 100 毫秒预算放大十倍。 */
             clock_gettime(CLOCK_REALTIME, &until);
-            ++until.tv_sec;
-            pthread_cond_timedwait(&runtime->wake, &runtime->mutex, &until);
+            until.tv_sec += (time_t)(delay / 1000);
+            until.tv_nsec += (long)(delay % 1000) * 1000000L;
+            if (until.tv_nsec >= 1000000000L) {
+                ++until.tv_sec;
+                until.tv_nsec -= 1000000000L;
+            }
+            if (delay) pthread_cond_timedwait(&runtime->wake, &runtime->mutex, &until);
         }
         pthread_mutex_unlock(&runtime->mutex);
     }

@@ -1,6 +1,7 @@
 """Package native clients in the project build directory; never include credentials or test drivers."""
 import hashlib
 import json
+import os
 import pathlib
 import platform
 import re
@@ -99,6 +100,9 @@ for source,license_name in [('cjson-1.7.19/LICENSE','cJSON-LICENSE.txt'),('sodiu
     if path.is_file(): shutil.copy2(path,licenses/license_name)
 copyrights=root/'third_party/licenses-unix'
 if copyrights.is_dir(): shutil.copytree(copyrights,licenses/'runtime')
+packaged_binary=package/'Drop.app/Contents/MacOS/drop' if system=='macos' else package/'drop'
+(package/'BUILD-INFO.json').write_text(json.dumps({'product_version':version,'platform':system+'-'+arch,
+    'build_label':os.environ.get('DROP_BUILD_LABEL',''),'binary_sha256':hashlib.sha256(packaged_binary.read_bytes()).hexdigest()},indent=2)+'\n',encoding='utf-8')
 manifest=[]
 for file in sorted(package.rglob('*')):
     if file.is_file(): manifest.append({'path':str(file.relative_to(package)),'sha256':hashlib.sha256(file.read_bytes()).hexdigest(),'bytes':file.stat().st_size})
