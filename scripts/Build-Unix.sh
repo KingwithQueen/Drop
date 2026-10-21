@@ -9,7 +9,9 @@ config=${1:-Debug}
 case "$config" in Debug|Release) ;; *) echo 'Usage: Build-Unix.sh [Debug|Release]' >&2; exit 2;; esac
 testing=ON
 # 检查代码仅在开发机保留；源码发布缺少这些文件时覆盖旧缓存，关闭测试目标。
-for check_source in portable_check.c client_fixture.c gtk_probe.inc macos_probe.inc; do
+gui_check=gtk_probe.inc
+if [ "$(uname -s)" = Darwin ]; then gui_check=macos_probe_c.inc; fi
+for check_source in portable_check.c client_fixture.c "$gui_check"; do
     if [ ! -f "$root/checks/$check_source" ]; then testing=OFF; fi
 done
 cmake -S "$root" -B "$root/build/unix/$config" -G Ninja -DCMAKE_BUILD_TYPE="$config" -DBUILD_TESTING="$testing"

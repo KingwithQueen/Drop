@@ -2,7 +2,7 @@
 
 独立发布包附带首次配置脚本：服务器 Setup-DropServer.ps1（管理员运行），客户端 Setup-Drop.ps1（普通用户运行）。只指定程序目录和数据根目录，子目录自动创建，服务端口默认 8443、可用 -Port 修改。具体步骤和已有部署的保护规则见 SERVER_DEPLOYMENT.md、CLIENT_DEPLOYMENT.md。脚本共用 Setup.Common.ps1，解压后保留在同一目录。
 
-原 Visual Studio 2026 解决方案 drop.slnx 与主项目 drop 保留。业务代码按 C17、UTF-8、/W4 /WX 编译。当前 1.0.3 供长期部署试用，实际范围以 DEVELOPMENT_STATUS.md 和 VERIFICATION.md 为准；版本号不表示全部现场验收已完成。
+原 Visual Studio 2026 解决方案 drop.slnx 与主项目 drop 保留。业务代码按 C17、UTF-8、/W4 /WX 编译。当前 1.0.4 供长期部署试用，实际范围以 DEVELOPMENT_STATUS.md 和 VERIFICATION.md 为准；版本号不表示全部现场验收已完成。
 
 ## 可复现构建
 
@@ -26,7 +26,7 @@
 
 图标源为根目录 Dropico.png（客户端）和 DropServerico.png（服务器）；已编码的 drop/drop.ico、dropserver/dropserver.ico 编入 EXE，客户端窗口与托盘也使用该资源。更换原图后运行 `python scripts/Generate-Icons.py`（需 Pillow）再构建；常规构建不依赖 Python。
 
-Drop 和 dropserver 产品版本、Windows 文件属性中的文件版本均为三段 1.0.3。两个程序的 --version、客户端窗口标题、服务器 /api/v1/server-info 和 HTTP User-Agent 使用同一版本，包名由 scripts/Package.ps1 读取 dropcommon/version.h 生成。Windows 固定数值资源及程序集身份按系统要求保留内部四段格式，末尾零不作为产品迭代号；FileVersion 与 ProductVersion 显示字符串共用 DROP_VERSION。x64/Win32 使用相同产品版本；Debug 文件资源标记调试属性，Release/生产资源不标记。业务协议版本 1 和密钥版本 1 保留，当前服务器 schema 12、客户端 schema 5，升级前自动保存迁移快照。消息删除需要更新服务器和全部客户端到本次构建，保留原数据目录及服务参数；运行时删除不需停止服务。
+Drop 和 dropserver 产品版本、Windows 文件属性中的文件版本均为三段 1.0.4。两个程序的 --version、客户端窗口标题、服务器 /api/v1/server-info 和 HTTP User-Agent 使用同一版本，包名由 scripts/Package.ps1 读取 dropcommon/version.h 生成。Windows 固定数值资源及程序集身份按系统要求保留内部四段格式，末尾零不作为产品迭代号；FileVersion 与 ProductVersion 显示字符串共用 DROP_VERSION。x64/Win32 使用相同产品版本；Debug 文件资源标记调试属性，Release/生产资源不标记。业务协议版本 1 和密钥版本 1 保留，当前服务器 schema 12、客户端 schema 5，升级前自动保存迁移快照。消息删除需要更新服务器和全部客户端到本次构建，保留原数据目录及服务参数；运行时删除不需停止服务。
 
 ## 服务器与传输模式
 

@@ -79,7 +79,10 @@ if($Component -eq 'Client') {
         $content=[IO.File]::ReadAllText($packageReadme).Replace('(ACCOUNT_MANAGEMENT.md)','(docs/ACCOUNT_MANAGEMENT.md)')
         [IO.File]::WriteAllText($packageReadme,$content,[Text.UTF8Encoding]::new($true))
     }
-    Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination $destination -Recurse
+    # 发布文档只取维护中的 Markdown 文件，不能递归带入本机设计稿或验收材料。
+    $packageDocs=Join-Path $destination 'docs'
+    New-Item -ItemType Directory -Path $packageDocs | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $root 'docs') -File -Filter '*.md' | Copy-Item -Destination $packageDocs
     Copy-Item -LiteralPath (Join-Path $root 'config') -Destination $destination -Recurse
 @'
 Development candidate. Read docs/DEVELOPMENT_STATUS.md and docs/VERIFICATION.md for actual acceptance limits.

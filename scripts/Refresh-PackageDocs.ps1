@@ -12,7 +12,12 @@ $client=(Split-Path -Leaf $destination).StartsWith('Drop-Client-',[StringCompari
 $server=(Split-Path -Leaf $destination).StartsWith('DropServer-',[StringComparison]::OrdinalIgnoreCase)
 $exe=if($client) {'drop.exe'} else {'dropserver.exe'}
 if(!(Test-Path -LiteralPath (Join-Path $destination $exe))) { throw 'Package executable is missing.' }
-if(!$client) { Copy-Item -LiteralPath (Join-Path $root 'docs') -Destination $destination -Recurse -Force }
+if(!$client) {
+    # 与打包入口共用相同的文档选择，避免把本机设计稿或检查材料刷新进发布包。
+    $packageDocs=Join-Path $destination 'docs'
+    New-Item -ItemType Directory -Force -Path $packageDocs | Out-Null
+    Get-ChildItem -LiteralPath (Join-Path $root 'docs') -File -Filter '*.md' | Copy-Item -Destination $packageDocs -Force
+}
 $readme=if($client) {'docs\CLIENT_DEPLOYMENT.md'} elseif($server) {'docs\SERVER_DEPLOYMENT.md'} else {'README.md'}
 Copy-Item -LiteralPath (Join-Path $root $readme) -Destination (Join-Path $destination 'README.md') -Force
 if($server) {

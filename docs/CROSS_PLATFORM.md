@@ -1,6 +1,8 @@
-# Drop 1.0.3 Linux / macOS 客户端
+# Drop 1.0.4 Linux / macOS 客户端
 
-本次实现原生图形客户端：Linux 使用 GTK4、Wayland 和 KDE StatusNotifierItem；macOS 使用 AppKit 和菜单栏图标。业务、数据库、附件和消息删除继续复用 Windows 的 C17 核心，版本保持 `1.0.3`。中央服务器继续使用既有 Windows 版本，本次不迁移服务器或生产数据。
+1.0.4 将原 Mac Objective-C 界面改为 C17，通过公开运行时使用同一套 AppKit 原生控件、系统菜单和异步文件面板；不再启用 Objective-C 编译语言。Intel Mac 已完成构建和实际原生窗口回归，Apple Silicon 目前仅通过 C17 语法检查，未链接或运行。Linux 保持既有 GTK4 C 界面，桌面布局沿用已确认设计。
+
+本次实现原生图形客户端：Linux 使用 GTK4、Wayland 和 KDE StatusNotifierItem；macOS 使用 AppKit 和菜单栏图标。业务、数据库、附件和消息删除继续复用 Windows 的 C17 核心，版本统一为 `1.0.4`。中央服务器继续使用既有 Windows 版本，本次不迁移服务器或生产数据。
 
 ## 已接入的功能
 
@@ -18,7 +20,7 @@ Linux 消息按从旧到新显示，最新消息位于底部；打开或切换�
 
 macOS 采用相同的消息顺序和视图序号约束；AppKit 用户行按账号 ID 增量维护，未变化的正文不重新写入文本存储，保留历史阅读位置和选区。添加附件继续使用固定高度列表，不挤占输入区。
 
-后台按实际截止时间继续处理续传和补页，同一线程内复用 HTTP 连接及 TLS 会话，减少反复连接与握手；认证头和请求内容逐次释放。发布包的 `BUILD-INFO.json` 记录产品版本、构建说明及程序摘要；同为 1.0.3 的不同修正版须结合该文件或程序 SHA-256 区分。
+后台按实际截止时间继续处理续传和补页，同一线程内复用 HTTP 连接及 TLS 会话，减少反复连接与握手；认证头和请求内容逐次释放。发布包的 `BUILD-INFO.json` 记录产品版本、构建说明及程序摘要；同一产品版本的不同构建须结合该文件或程序 SHA-256 区分。
 
 ## 数据与登录
 
@@ -67,6 +69,6 @@ Linux 包针对本次 openSUSE Tumbleweed x86_64 环境，运行依赖 GTK4、li
 
 当前仍需现场观察长时间运行、睡眠/网络恢复、跨物理屏幕及不同缩放组合；系统最终是否展示通知由桌面设置决定。Apple Silicon、其他 Linux 发行版、内置登录后自动启动设置、Apple 签名与公证、Linux/macOS 服务器移植不属于本次已验证交付。可先通过系统的登录项机制启动客户端，不宣称内置自启动已完成。
 
-当前 Linux 现场更新与同步优化记录位于 `build/verification/linux-followup-20261020/`，Mac 专项修正及包校验记录位于 `build/verification/macos-followup-20261020/`；此前三平台界面优化记录保留于 `build/verification/ui-optimization-1.0.3.json`。本机修正包为 `build/packages/Drop-1.0.3-linux-x86_64-20261020.tar.gz` 和 `build/packages/Drop-1.0.3-macos-x86_64-20261020.tar.gz`，各有省略日期的同内容副本。版本仍为 1.0.3，包内 `BUILD-INFO.json` 区分构建并记录实际程序摘要；Mac 专项未替换用户现有安装或启动真实账号会话。
+当前 Linux 现场更新与同步优化记录位于 `build/verification/linux-followup-20261020/`，Mac 专项修正及包校验记录位于 `build/verification/macos-followup-20261020/`；此前三平台界面优化记录保留于 `build/verification/ui-optimization-1.0.3.json`。本机修正包为 `build/packages/Drop-1.0.3-linux-x86_64-20261020.tar.gz` 和 `build/packages/Drop-1.0.3-macos-x86_64-20261020.tar.gz`，各有省略日期的同内容副本。当时版本仍为 1.0.3，包内 `BUILD-INFO.json` 区分构建并记录实际程序摘要；Mac 专项未替换用户现有安装或启动真实账号会话。
 
 所有者随后授权直接更新 Mac 安装。现场未找到独立安装的应用或真实登录数据，已将验证过的应用安装到 `/Users/owl/程序/Drop/Drop.app` 并在图形会话启动；程序旁数据使用 `/Users/owl/程序/Drop/Data/Drop`。已核对实际进程的可执行文件路径、映射文件身份、SHA-256 和签名与本轮发布包一致，记录见 `build/verification/macos-followup-20261020/installation.json`。首次使用需在「配置与账号」登录；开发源码及构建目录保留。

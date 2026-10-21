@@ -94,7 +94,10 @@ docs=package/'docs'; docs.mkdir()
 for filename in ('CROSS_PLATFORM.md','PROTOCOL.md','PAKE.md'):
     if (root/'docs'/filename).is_file(): shutil.copy2(root/'docs'/filename,docs/filename)
 licenses=package/'licenses'; licenses.mkdir()
-shutil.copytree(root/'vendor/csrp',licenses/'csrp')
+csrp_licenses=licenses/'csrp'; csrp_licenses.mkdir()
+# 许可证使用明确清单，不能递归带入仅本机保留的上游自测源码。
+for filename in ('LICENSE','PROVENANCE.md'):
+    shutil.copy2(root/'vendor/csrp'/filename,csrp_licenses/filename)
 for source,license_name in [('cjson-1.7.19/LICENSE','cJSON-LICENSE.txt'),('sodium-1.0.22/LICENSE','libsodium-LICENSE.txt')]:
     path=root/'build/unix/sources'/source
     if path.is_file(): shutil.copy2(path,licenses/license_name)
